@@ -1,0 +1,23 @@
+[gate]
+repo = "kit-ci"
+
+[tier.fast]
+stages = ["format", "lint", "tests"]
+
+[tier.full]
+stages = ["*"]
+
+[stage.format]
+cmd = "clang-format --dry-run --Werror ."
+
+[stage.lint]
+cmd = "clang-tidy -p build"
+tier = "fast"
+fail_on = "output:^no tests ran"
+timeout = 120
+files = "*.cpp"
+when = "tool:clang-tidy"
+summary = "head:10"
+
+[stage.tests]
+cmd = "ctest --output-on-failure"

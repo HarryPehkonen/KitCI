@@ -1,0 +1,5 @@
+[stage.lint]
+cmd = "ruff check ."
+
+[tier.fast]
+stages = ["lint", "lint

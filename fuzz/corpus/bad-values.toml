@@ -1,0 +1,6 @@
+[stage.lint]
+cmd = "ruff check ."
+timeout = -1
+
+[tier.fast]
+stages = ["lint", "missing"]

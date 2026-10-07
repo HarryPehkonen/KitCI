@@ -1,0 +1,6 @@
+# a comment, and a # inside a string
+[stage.escape]
+cmd = "printf \"%s\n\" (not a comment)"
+
+[stage.escape]
+cmd = "duplicate table"

@@ -1,0 +1,11 @@
+---
+# The lint configuration for this repo. Findings are fixed in the code, never by
+# widening this list (SPEC.md §6).
+Checks: >
+  clang-analyzer-*,
+  bugprone-*,
+  performance-*,
+  -bugprone-easily-swappable-parameters
+WarningsAsErrors: ''
+HeaderFilterRegex: '.*'
+FormatStyle: file

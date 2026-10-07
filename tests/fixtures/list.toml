@@ -1,0 +1,17 @@
+[gate]
+repo = "kit-ci"
+
+[tier.fast]
+stages = ["format", "lint", "tests"]
+
+[tier.full]
+stages = ["*"]
+
+[stage.format]
+cmd = "clang-format --dry-run --Werror ."
+
+[stage.lint]
+cmd = "clang-tidy -p build"
+
+[stage.tests]
+cmd = "ctest --output-on-failure"

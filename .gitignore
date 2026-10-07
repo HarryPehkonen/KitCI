@@ -1,0 +1,14 @@
+# The gate's own footprint.
+#
+# No trailing slashes, and that is the whole point: `tree` runs before the stages that
+# create these paths, and `git check-ignore` cannot match a directory-only pattern against
+# a path that does not exist yet — so `build/` reads NOT ignored on a fresh clone's first
+# run and passes on the second.
+.ci-logs
+build
+build-*
+.ci.env
+
+# editor leftovers
+*.swp
+*~

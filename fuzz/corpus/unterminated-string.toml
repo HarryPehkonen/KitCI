@@ -1,0 +1,2 @@
+[stage.lint]
+cmd = "ruff check .

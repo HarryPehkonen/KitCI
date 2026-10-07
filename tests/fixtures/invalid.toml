@@ -1,0 +1,3 @@
+[stage.lint]
+cmd = "ruff check ."
+colur = "red"

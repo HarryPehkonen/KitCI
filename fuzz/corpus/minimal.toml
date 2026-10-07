@@ -1,0 +1,2 @@
+[stage.tests]
+cmd = "ctest --output-on-failure"
