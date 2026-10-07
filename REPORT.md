@@ -1,6 +1,8 @@
 Gate verdict line (verbatim):
     all 6 stage(s) passed in 183s
     GATE PASSED
+    (and the pre-push tier, run by .githooks/pre-push on commit 1596500 — the push that published
+    this: "all 6 stage(s) passed in 188s / GATE PASSED", 459,041 fuzz inputs, 0 artifacts)
 Test count: 53 — the runner's own line was "100% tests passed, 0 tests failed out of 53".
 (Stage D added no tests and changed no C++ source: it added one line to CMakeLists.txt — an
 `install(TARGETS kit-ci RUNTIME DESTINATION bin)` rule, so a machine can install the engine
