@@ -356,3 +356,33 @@ set a stage's environment.
 **Question:** is that ledger the right level of fidelity for v1, or is any one of the five worth
 carrying back into the engine as a keyword (the tools table and a `strict` switch are the two that
 look like they could be)?
+
+## Q29 — What does "the HTML carries no absolute URL" mean when the config names one?
+
+The fuzz stage found this on 2026-10-06, during stage D (card t_5ee2ee12), and it is why the push
+that published this stage's report was first REFUSED:
+`.ci-logs/fuzz-artifacts/crash-300de12c3ac55acba12edd364e9b90eacaaa41cf`, a valid config whose
+`repo = "kit-chttp://i"`. The page echoes the repo name in its summary line, so the bytes of the
+standalone HTML contained `http://` — and the oracle aborts on exactly that (`fuzz_gate_toml.cpp:42`,
+mirroring the frozen `GraphHtmlIsSelfContained` in `tests/graph_test.cpp`).
+
+Two readings. (a) The oracle is too strict: a URL in *inert text* cannot be fetched, so the check
+should look for fetching positions (`src=`, `href=`, `url(`, `@import`, `xmlns`) instead. (b) The
+engine is wrong: §7 and §8 state the property at the byte level ("no `http://` or `https://`
+reference in the HTML output"), and `repo` is a free display string — §3 restricts the vocabulary's
+*names* to `[A-Za-z0-9_-]`, not the repo name — so a legal config was violating a stated contract.
+
+**Reading taken: (b), and the page now guarantees the property by construction.** Display text goes
+through `HtmlDisplay()`, which writes the colon of a `://` separator as `&#58;`: a browser renders
+the name unchanged (`kit-chttp://i`), the page's bytes carry no absolute URL whatever the config
+says, and the cheap grep stays a valid test of the property the SPEC states. Test first —
+`GraphHtmlHidesAUrlInTheRepoName` fails on the old code and passes on the new — and the input is now
+a checked-in corpus seed, so a reintroduction aborts when the campaign loads it instead of waiting
+for a mutation to find it again. Reading (a) is not crazy (it is what "no external requests" means
+in general), but choosing it would mean rewriting a frozen test's meaning and the oracle together —
+a spec-owner's call, not a worker's. Note what (b) deliberately does NOT cover: Mermaid and dot
+still echo the repo name verbatim in their comments (they have no entity syntax), and no frozen test
+asks them not to.
+**Question:** keep the byte-level invariant for all three formats (dot's `// repo:` and Mermaid's
+`%% repo:` would then need their own escape), or move the check to fetching positions in the HTML
+and let the raw text through everywhere?

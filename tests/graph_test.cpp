@@ -115,6 +115,31 @@ TEST(GraphTest, GraphHtmlIsSelfContained) {
     EXPECT_FALSE(Contains(html, "javascript:")) << html;
 }
 
+// Found by the fuzz stage on 2026-10-06 (card t_5ee2ee12, the campaign that found
+// `.ci-logs/fuzz-artifacts/crash-300de12c…`). The page echoes the config's repo name, and
+// `repo` is a free display string, so a repo whose name spells out a URL produced
+// `<p>3 stage(s), 2 tier(s) — repo kit-chttp://i …</p>` and tripped the byte-level
+// self-containment check above. A page that carries no absolute URL whatever the config says
+// is worth more than one that carries none for the configs we happened to try.
+TEST(GraphTest, GraphHtmlHidesAUrlInTheRepoName) {
+    const kitci::ParseResult result = kitci::parse_gate_toml(R"toml([gate]
+repo = "kit-chttp://i"
+
+[tier.fast]
+stages = ["lint"]
+
+[stage.lint]
+cmd = "ruff check ."
+)toml");
+    ASSERT_TRUE(result.ok) << result.error.message;
+    const std::string html = kitci::graph_html(result.config);
+    EXPECT_FALSE(Contains(html, "http://")) << html;
+    EXPECT_FALSE(Contains(html, "https://")) << html;
+    // Still displayed, though: the scheme's colon is written as an entity, and a browser
+    // renders that as ':' — the name is not mangled for the reader, only for a grep.
+    EXPECT_TRUE(Contains(html, "kit-chttp&#58;//i")) << html;
+}
+
 TEST(GraphTest, GraphHtmlNamesEveryStageAndTier) {
     const kitci::Config config = ParseExample();
     const std::string html = kitci::graph_html(config);

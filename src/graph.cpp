@@ -66,6 +66,21 @@ std::string XmlEscape(const std::string& text) {
     return out;
 }
 
+// Self-containment (SPEC.md §7, §8) is a byte-level property: the page carries no "http://" or
+// "https://" at all. Most of the page's text is the vocabulary's own ([A-Za-z0-9_-] names, see
+// above), but `repo` is a free display string (§3), so a page echoing a repo named after a URL
+// used to carry one. Display text therefore goes through this: a colon followed by "//" is
+// written as an entity, which a browser renders as ':' — the reader sees the name unchanged and
+// the bytes hold no absolute URL, whatever the config says. Found by the gate's fuzz stage on
+// 2026-10-06 (card t_5ee2ee12; input: crash-300de12c3ac55acba12edd364e9b90eacaaa41cf).
+std::string HtmlDisplay(const std::string& text) {
+    std::string out = XmlEscape(text);
+    for (std::size_t at = out.find("://"); at != std::string::npos; at = out.find("://", at + 5)) {
+        out.replace(at, 1, "&#58;");
+    }
+    return out;
+}
+
 std::string DotEscape(const std::string& text) {
     std::string out;
     out.reserve(text.size());
@@ -447,7 +462,7 @@ std::string Html(const Model& model) {
     out += " tier(s)";
     if (!model.repo.empty()) {
         out += " — repo ";
-        out += XmlEscape(model.repo);
+        out += HtmlDisplay(model.repo);
     }
     out += " · read off the parsed gate.toml, no JavaScript, no external requests</p>\n";
 

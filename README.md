@@ -274,9 +274,12 @@ are short, lowercase and name the fault:
 kit-ci: unknown key 'colur' in [stage.lint] (line 4)
 ```
 
-`fuzz/corpus/` holds the seeds the 60-second campaign starts from: a minimal config, a
-config using every documented key, and five deliberate rejections (unknown key, unterminated
-string, unterminated array, a duplicate table, bad values). The campaign does not only parse:
+`fuzz/corpus/` holds the seeds the 60-second campaign starts from: a minimal config, a config using
+every documented key, and five deliberate rejections (unknown key, unterminated string,
+unterminated array, a duplicate table, bad values) — plus, since stage D, the input that made the
+HTML page carry an absolute URL in its repo name (`repo-name-with-a-url.toml`): it is a regression
+seed, so undoing that fix aborts the campaign when it loads the corpus rather than waiting for a
+mutation to find the input again (QUESTIONS.md Q29). The campaign does not only parse:
 every accepted input is also rendered in all three graph formats, and a format that crashed,
 returned nothing, or emitted an absolute URL is a finding (SPEC.md §5).
 

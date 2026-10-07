@@ -1,0 +1,19 @@
+[gate]
+repo = "kit-chttp://i"
+
+[tier.fast]
+stages = ["format"]
+
+[tier.full]
+stages = ["*"]
+
+[stage.format]
+cmd = "clr ."
+
+[stage.lint]
+cmd = "clg-idy -p ild"
+tier = "fast"
+fail_on = "output:^ppo:49"
+
+[stage.tAests]
+cmd ="cture"
