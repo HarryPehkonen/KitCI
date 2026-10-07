@@ -203,7 +203,8 @@ matches nothing under `--changed`, is **skipped**: not failed, not counted. `--c
 merge base with `main`; when git cannot give it one, the run says so and runs every stage
 unscoped rather than skipping silently (QUESTIONS.md Q13). The rest of the readings the runner
 took — the default tier, strictness, glob semantics, what happens to an all-skipped run — are
-Q9–Q16 in `QUESTIONS.md`; the graph readings are Q17–Q21.
+Q9–Q16 in `QUESTIONS.md`; the graph readings, and the one about what this README may claim
+about `pre-commit`, are Q17–Q23.
 
 ## The gate
 

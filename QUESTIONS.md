@@ -3,7 +3,7 @@
 SPEC.md §0: "If something is genuinely ambiguous, write the question into `QUESTIONS.md` and
 take the simplest reading rather than guessing elaborately." These are the readings taken
 while building KitCI, each with the question it answers: **Q1–Q8** in stage A (the parser and
-the gate), **Q9–Q16** in stage B (the runner), **Q17–Q22** in stage C (the graphs and the
+the gate), **Q9–Q16** in stage B (the runner), **Q17–Q23** in stage C (the graphs and the
 README positioning). None of them changes the frozen vocabulary.
 
 ## Q1 — Is the stage set exactly the five in §6, or the kit's gate plus those five?
@@ -241,3 +241,24 @@ prints the empty flow and exits `0` — it answered the question it was asked, a
 diagram is the truth about a config with no stages. The alternative (exit 2) would make the
 honest rendering of a broken config indistinguishable from "could not read the config".
 **Question:** should `--graph` refuse a config whose every tier resolves to no stages?
+
+## Q23 — What may the README claim about pre-commit?
+
+The stage-C amendment gave five differences to sell, the fourth being that pre-commit "stops at
+the first failing hook", and I am told the README's first screen must answer "why not
+pre-commit?".
+
+**Reading taken:** checked against pre-commit's own documentation before writing a line of it.
+`fail_fast` is a **top-level option whose default is `false`** ("set to `true` to have
+pre-commit stop running hooks after the first failure"), and its hook-level sibling is also
+optional — so pre-commit runs every hook and reports every failure, exactly as kit-ci does. The
+README therefore claims what survives checking: one grep-able verdict line, the third exit code
+(`2` means nothing ran), and the absence of any fail-fast option. Difference 3 is narrower than
+the amendment too: pre-commit's `stages` attaches a hook to one of git's own hook stages — a
+fixed enum — where a kit-ci tier is an arbitrary, repo-declared, named set chosen at the call
+site. Difference 1 was confirmed as written (pre-commit is a Python framework that clones and
+installs hook environments on first run; its own quick start shows the download, and building a
+copy of node when the machine has none). Similarly, `when = "tool:X"` is credited as
+pre-commit's language/adapters idea and `--changed` as its changed-file scoping.
+**Question:** is the checked framing wanted, or should the positioning keep the sharper
+phrasing even where pre-commit's documentation does not support it?
