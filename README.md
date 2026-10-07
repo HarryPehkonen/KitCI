@@ -52,9 +52,12 @@ or the tier resolved to no stages. A gate that checks nothing cannot read as gre
 is deliberately no option to stop at the first failure.
 
 **5. The gate explains itself.** `--graph` prints the policy as a Mermaid diagram,
-`--graph --format html` as a standalone offline page, `--graph --format dot` as GraphViz text.
-Nothing in `pre-commit`, `prek` or `husky` does this: the config file is also the
-documentation, generated from the same parse the run uses, so it cannot go stale.
+`--graph --format html` as a standalone offline page, `--graph --format dot` as GraphViz text,
+and `--ast` as canonical JSON — the same parse the run uses, in the shape a program (or `jq`)
+wants. The diagram annotates a stage only where it deviates from the defaults, so a node with
+nothing extra on it is a stage that is entirely standard. Nothing in `pre-commit`, `prek` or
+`husky` does this: the config file is also the documentation, generated from the same parse the
+run uses, so it cannot go stale.
 
 ### What we borrowed, by name
 
@@ -82,6 +85,11 @@ where the kit's 552-line bash copy used to be, with the checks unchanged. The wo
 including what the conversion could not express and what it costs, is the next section but one:
 "Converting a repo".
 
+**v1.1 — the config as data.** `--ast` prints the parsed config as canonical JSON (defaults
+materialised, declaration order, no line numbers), the graph nodes annotate only the settings a
+stage deviates from, and `SPEC.md` gains an EBNF appendix for `gate.toml`'s total syntax. The
+vocabulary is untouched: every one of these is a projection of the same parse the run uses.
+
 ## Build and test
 
 ```bash
@@ -104,6 +112,7 @@ library; `-DKITCI_BUILD_TESTS=OFF` skips the suite.
 
 ```bash
 ./build/kit-ci --list                    # stages, tiers, and which stages are in which tier
+./build/kit-ci --ast                     # the parsed config as canonical JSON (pipe it to jq)
 ./build/kit-ci --graph                   # the flow as Mermaid text (GitHub renders it)
 ./build/kit-ci --graph --format dot      # GraphViz text
 ./build/kit-ci --graph --format html     # standalone page, inline SVG, no JavaScript
@@ -114,11 +123,14 @@ All three formats are **emitted, never rendered**: no image library, no subproce
 renderer, no network. `dot` does not have to be installed for `--format dot` to work (it is
 not installed on the machine that wrote this) — the text goes to whatever viewer you point at
 it. Every format is a pure function of the parsed config and therefore byte-stable: same
-config in, same bytes out, so the output can be committed, diffed and golden-tested.
+config in, same bytes out, so the output can be committed, diffed and golden-tested. `--ast`
+included: it is a rendering of the same parse, not a second reading of the file — and it
+materialises the defaults, so a stage that wrote no `timeout` says `"timeout": 300`.
 
-The graph mode is a *reading* of the config, so it takes no run options: `--graph --tier fast`
-prints the whole config and says on stderr that it ignored `--tier`. Two output modes at once
-(`--list --graph`) is exit `2`, and so is an unknown format name:
+The graph and AST modes are *readings* of the config, so they take no run options:
+`--graph --tier fast` prints the whole config and says on stderr that it ignored `--tier`, and
+`--ast` does the same. Two output modes at once (`--list --graph`, `--ast --graph`) is exit `2`
+— one process prints one answer — and so is an unknown format name:
 
 ```
 $ ./build/kit-ci --graph --format svg
@@ -163,11 +175,12 @@ timeout = 120
 flowchart LR
     %% kit-ci gate flow — from the parsed gate.toml; same config, same bytes
     %% one node per stage, one edge per step in a tier's run order
+    %% a node's second line is what the stage deviates on; no line, default
     %% repo: docsum
     s0["format"]
     s1["lint"]
-    s2["tests"]
-    s3["fuzz"]
+    s2["tests<br/>fail_on output:^no tests ran"]
+    s3["fuzz<br/>timeout 120"]
     s0 --> s1
     s1 --> s2
     s2 --> s3
@@ -180,15 +193,49 @@ flowchart LR
 
 `--graph-html` prints the same flow as a page you can open from `file://` with no network:
 dark background, one box per stage (the box carries the tiers it belongs to), arrows in run
-order, a legend. It contains no absolute URL at all — not even an SVG namespace, which an
+order, a legend, and a detail panel under the diagram naming only the stages that deviate from
+the defaults. It contains no absolute URL at all — not even an SVG namespace, which an
 inline `<svg>` in an HTML5 document does not need — and no JavaScript.
 
+`--ast` prints the same parse as data (abridged here to the parts that change with the config):
+
+```json
+{
+  "gate": {
+    "repo": "docsum",
+    "strict": true
+  },
+  "tiers": [
+    {
+      "name": "fast",
+      "stages": [
+        "format",
+        "lint"
+      ]
+    }
+  ],
+  "stages": [
+    {
+      "name": "tests",
+      "cmd": "pytest -q",
+      "tier": null,
+      "fail_on": "output:^no tests ran",
+      "timeout": 300,
+      "files": null,
+      "when": null,
+      "summary": "head:40"
+    }
+  ]
+}
+```
+
 Read the Mermaid the way it is written: the `%% class ids` comment names which `classDef` is
-which tier, because that is what Mermaid has instead of a legend, and a stage in two tiers
-carries two classes (a renderer that keeps only the last `classDef` will colour it by the last
-tier). In `dot`, a stage several tiers run is declared in the first cluster that runs it and
-mentioned by name inside the others, so the node's `comment` attribute names every tier it
-belongs to.
+which tier, because that is what Mermaid has instead of a legend, a stage in two tiers carries
+two classes (a renderer that keeps only the last `classDef` will colour it by the last tier),
+and a node's second line is the list of settings that stage departs from — a node with one line
+is a stage that leaves every default alone. In `dot`, a stage several tiers run is declared in
+the first cluster that runs it and mentioned by name inside the others, so the node's `comment`
+attribute names every tier it belongs to and then, after the tier list, the same deviations.
 
 ## Running the stages
 
@@ -237,7 +284,7 @@ git config core.hooksPath .githooks     # one-time, per clone
 | `build` | cmake configure + build with **gcc and clang**, zero warnings (warnings are errors) |
 | `lint` | `clang-tidy` over every source in the compile database; findings are fixed in the code, never by widening `.clang-tidy` |
 | `tests` | `ctest`, and the count is printed |
-| `fuzz` | the parser and the graph formats as a libFuzzer target (`-fsanitize=fuzzer,address,undefined`) for 60 s, starting from the checked-in `fuzz/corpus/` |
+| `fuzz` | the parser, the graph formats and the AST as a libFuzzer target (`-fsanitize=fuzzer,address,undefined`) for 60 s, starting from the checked-in `fuzz/corpus/` |
 
 A failing stage prints everything that failed inside it and then stops the run, and the
 summary names every requested stage that therefore did not run. A run where a stage did not
@@ -286,8 +333,9 @@ unterminated array, a duplicate table, bad values) — plus, since stage D, the 
 HTML page carry an absolute URL in its repo name (`repo-name-with-a-url.toml`): it is a regression
 seed, so undoing that fix aborts the campaign when it loads the corpus rather than waiting for a
 mutation to find the input again (QUESTIONS.md Q29). The campaign does not only parse:
-every accepted input is also rendered in all three graph formats, and a format that crashed,
-returned nothing, or emitted an absolute URL is a finding (SPEC.md §5).
+every accepted input is also rendered in all three graph formats and as the canonical AST, twice,
+and a rendering that crashed, came back empty, differed between two calls, or emitted an absolute
+URL in the HTML is a finding (SPEC.md §5).
 
 ## Converting a repo (the worked example: docsum)
 
@@ -375,16 +423,19 @@ reader to discover.
 include/kitci/parser.hpp   the parsed-config model and the parser's API
 include/kitci/runner.hpp   the runner's API: RunOptions, StageResult, RunResult
 include/kitci/graph.hpp    the graph API: GraphFormat and the three renderings
+include/kitci/ast.hpp      the canonical-JSON API (--ast)
 src/parser.cpp             the TOML-subset parser
 src/runner.cpp             stage execution: fail_on, timeouts, skips, the verdict
 src/graph.cpp              Mermaid, the inline-SVG HTML page, and GraphViz dot
+src/ast.cpp                the canonical AST (--ast), a projection of one parse
 src/main.cpp               the command line
 tests/parser_test.cpp      the frozen parsing tests (SPEC.md §8)
 tests/runner_test.cpp      the frozen runner tests (SPEC.md §8)
-tests/graph_test.cpp       the frozen graph tests (SPEC.md §8 and the stage-C amendment)
+tests/graph_test.cpp       the frozen graph tests (SPEC.md §8, the stage-C and v1.1 amendments)
+tests/ast_test.cpp         the frozen --ast tests (SPEC.md §8, v1.1)
 tests/cli_test.cpp         the frozen CLI tests, run against the real binary
 tests/fixtures/            configs the CLI test feeds to the binary
-fuzz/fuzz_gate_toml.cpp    the libFuzzer entry point (parser + graph outputs)
+fuzz/fuzz_gate_toml.cpp    the libFuzzer entry point (parser + graphs + AST)
 fuzz/corpus/               the checked-in starting corpus
 tools/ci.sh                the gate
 .githooks/                 pre-commit (fast tier), pre-push (full tier)

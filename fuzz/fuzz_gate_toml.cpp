@@ -9,11 +9,16 @@
 // function of the parsed config: every accepted input is rendered in all three formats, and
 // a format that crashed, returned nothing, or emitted an absolute URL (the self-contained
 // HTML invariant) is a finding.
+//
+// The v1.1 amendment extends it to the canonical AST (--ast): every accepted config is
+// rendered, twice, and a rendering that is empty or differs between two calls of the same
+// parse is a finding — being a pure function is what makes a golden file mean anything.
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <string>
 
+#include "kitci/ast.hpp"
 #include "kitci/graph.hpp"
 #include "kitci/parser.hpp"
 
@@ -30,11 +35,15 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     const std::string mermaid = kitci::graph_mermaid(result.config);
     const std::string html = kitci::graph_html(result.config);
     const std::string dot = kitci::graph_dot(result.config);
-    if (mermaid.empty() || html.empty() || dot.empty()) {
+    const std::string ast = kitci::ast_json(result.config);
+    if (mermaid.empty() || html.empty() || dot.empty() || ast.empty()) {
         std::abort();
     }
     // Determinism is part of what being a pure function means.
     if (kitci::graph_render(result.config, kitci::GraphFormat::kMermaid) != mermaid) {
+        std::abort();
+    }
+    if (kitci::ast_json(result.config) != ast) {
         std::abort();
     }
     // SPEC.md §7: the HTML page opens from file:// with no network, so it carries no

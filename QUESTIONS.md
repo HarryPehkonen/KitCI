@@ -4,7 +4,8 @@ SPEC.md §0: "If something is genuinely ambiguous, write the question into `QUES
 take the simplest reading rather than guessing elaborately." These are the readings taken
 while building KitCI, each with the question it answers: **Q1–Q8** in stage A (the parser and
 the gate), **Q9–Q16** in stage B (the runner), **Q17–Q23** in stage C (the graphs and the
-README positioning), **Q24–Q29** in stage D (the docsum conversion and the fleet notes).
+README positioning), **Q24–Q29** in stage D (the docsum conversion and the fleet notes),
+**Q31–Q33** in v1.1 (the canonical AST, the graph annotations, and the grammar appendix).
 **Q30 is not a reading** — it is a spec-owner ruling, and it is the one entry that changes the
 frozen vocabulary.
 
@@ -419,3 +420,72 @@ but if that reads as two switches for one decision, collapsing them (the key bec
 default strictness) is a spec owner's call, not a worker's.
 **Question:** is that layering what was ruled, or should `[gate] strict = false` also become the
 run's default strictness, so the key alone is enough?
+
+## Q31 — What does a backslash inside a string actually escape?
+
+Writing the EBNF appendix (SPEC.md, v1.1) meant stating the `string` production, and this is the
+one place the parser does not follow TOML. §3 calls `gate.toml` "a deliberately tiny TOML
+subset", and TOML's basic string defines an escape SET (`\b`, `\t`, `\n`, `\f`, `\r`, `\"`,
+`\\`, `\uXXXX`, `\UXXXXXXXX`) with anything else a fault. `ParseString` has no set: a `\` takes
+the NEXT BYTE LITERALLY, whatever it is. Measured on 2026-10-06 with the built binary:
+
+    cmd = "echo \"a\nb\" and \\ done"    ->    cmd: echo "anb" and \ done
+
+(`\n` is the letter `n`; there is no way to write a newline inside a string, because a line is
+one line.) A `\` immediately before the closing quote escapes it, so the string has no
+terminator and the fault is `unterminated string` — which falls out of the same production.
+
+**Reading taken:** the literal rule, written down rather than changed. It is what the frozen
+vocabulary already means, every converted repo's `cmd` is a shell string that `/bin/sh`
+interprets again, and no test changed — the appendix is the first document to SAY what the
+parser has always done (Appendix A, note 3).
+**Question:** is "an escape quotes the next byte" the intent (the `sh` reading), or should the
+subset adopt TOML's escape set and reject an unknown escape — which would turn a `cmd`
+containing `\n` from legal into a config fault?
+
+**The related tie-break, recorded in the same place:** a fault that DISCARDS an entry makes the
+table look like it is missing that key, and the key's absence is reported on the table's own
+(earlier) line — so for `[stage.x]` on line 1 with `cmd = "a" "b"` on line 2, the trailing-
+character fault is real but Q2's earliest-line rule reports `stage 'x' has no cmd (line 1)`,
+i.e. the less specific of the two. **Question:** should a fault that discards an entry suppress
+the derived "no cmd" fault on an earlier line, so the message names the typo?
+
+## Q32 — What shape does `--ast` print?
+
+The card that asked for `--ast` fixed the semantics (canonical JSON, byte-stable, one parse,
+defaults materialised, declaration order, semantic-only — no line numbers) and left three
+details to the implementation.
+
+**Reading taken:**
+1. **An absent optional string is `null`, not `""`.** The parser stores `""` for "not written"
+   and the runner reads that same `""` as "no glob" and "no tool gate", so `null` is the
+   runner's own view of the key — and it keeps "not written" distinct from `files = ""`, which
+   the config language permits and which `""` in the JSON would report identically.
+2. **The layout is fixed and pretty, not compact**: 2-space indent, one array element per line,
+   keys in the documented order (`gate`, `tiers`, `stages`; and inside a stage, the grammar's
+   own order). No list is ever taken from a `std::map` iteration — every order is one the config
+   itself established — because "canonical" has to survive a recompilation, not just a rerun.
+3. **`tier` and `tiers[].stages` are different questions.** The stage's `tier` key is what the
+   config declared; a tier's `stages` is the run order that tier resolves to. A stage can be in
+   a tier with no `tier =` line at all, and can carry `tier = "x"` while `x` also lists it, so
+   dropping either one would make some membership unreadable from the JSON.
+
+**Question:** is `null` for "not written" right, or should the three optional strings be omitted
+from the object entirely — or emitted as `""`, which is what the struct holds?
+
+## Q33 — Which stage settings a graph node annotates
+
+The card fixed the principle — "defaults are what NO annotation means", annotate only what a
+stage deviates on — and named four settings (`fail_on`, `timeout`, `when`, `files`).
+
+**Reading taken:** five, not four. `summary` has a default (`head:40`) exactly as `fail_on` and
+`timeout` do, so `summary = "head:10"` is a deviation a reader of the graph is not being told
+about if it is left out — the one silent deviation, which is the thing the principle exists to
+prevent. `cmd` is never annotatable (every stage has one) and `tier` is not either (membership
+is already the colour, the cluster, the label and the comment). Placement: Mermaid's second
+label line, the HTML detail panel (an SVG box has no room for a second line, and the page is
+standalone already), dot's existing `comment` attribute. A stage carrying all five defaults is
+annotated nowhere in any format, and all three formats are golden-tested byte-stable with
+annotations present.
+**Question:** is `summary` right to be annotated (it changes no stage's outcome, only how much
+failure output is shown), or should the annotation list stay at the four the card named?

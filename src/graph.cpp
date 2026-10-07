@@ -142,14 +142,59 @@ struct Edge {
 };
 
 struct Model {
-    std::string repo;                                  // display only, optional
-    std::vector<std::string> names;                    // stage names, declaration order
-    std::vector<std::vector<std::size_t>> tiers;       // per tier: node indices, run order
-    std::vector<std::string> tier_names;               // tier names, declaration order
-    std::vector<std::vector<std::size_t>> node_tiers;  // per node: tier indices
-    std::vector<Edge> edges;                           // deduplicated, first-seen order
-    std::vector<std::size_t> owner;                    // per node: first tier that runs it
+    std::string repo;                                   // display only, optional
+    std::vector<std::string> names;                     // stage names, declaration order
+    std::vector<std::vector<std::size_t>> tiers;        // per tier: node indices, run order
+    std::vector<std::string> tier_names;                // tier names, declaration order
+    std::vector<std::vector<std::size_t>> node_tiers;   // per node: tier indices
+    std::vector<Edge> edges;                            // deduplicated, first-seen order
+    std::vector<std::size_t> owner;                     // per node: first tier that runs it
+    std::vector<std::vector<std::string>> annotations;  // per node: non-default settings
 };
+
+// One annotation item: the key, then the value the config wrote — or `""` for a key whose
+// value is an empty string, so `summary` and `summary ""` cannot read as the same thing.
+std::string AnnotationItem(const std::string& key, const std::string& value) {
+    return value.empty() ? key + " \"\"" : key + " " + value;
+}
+
+// SPEC.md §7's annotation rule: what a stage deviates on, and nothing else. A default is
+// exactly the absence of an annotation, so an annotated node can be read as "and here is how
+// this stage is NOT the standard one". `cmd` is never an annotation (every stage has one) and
+// neither is `tier` (membership is already the colour, the cluster and the label).
+std::vector<std::string> AnnotationsFor(const Stage& stage) {
+    std::vector<std::string> notes;
+    if (stage.fail_on != kDefaultFailOn) {
+        notes.push_back(AnnotationItem("fail_on", stage.fail_on));
+    }
+    if (stage.timeout != kDefaultTimeout) {
+        notes.push_back(AnnotationItem("timeout", Number(stage.timeout)));
+    }
+    if (!stage.files.empty()) {
+        notes.push_back(AnnotationItem("files", stage.files));
+    }
+    if (!stage.when.empty()) {
+        notes.push_back(AnnotationItem("when", stage.when));
+    }
+    if (stage.summary != kDefaultSummary) {
+        notes.push_back(AnnotationItem("summary", stage.summary));
+    }
+    return notes;
+}
+
+// The annotations as one line, for a place that has one line to give (a Mermaid label, a dot
+// comment, an HTML list item). A stray byte cannot break a viewer, so this is the single-line
+// form every caller escapes afterwards.
+std::string JoinAnnotations(const std::vector<std::string>& notes, const std::string& separator) {
+    std::string text;
+    for (const std::string& note : notes) {
+        if (!text.empty()) {
+            text += separator;
+        }
+        text += note;
+    }
+    return text;
+}
 
 Model BuildModel(const Config& config) {
     Model model;
@@ -198,6 +243,14 @@ Model BuildModel(const Config& config) {
         }
         model.tiers.push_back(run);
     }
+
+    model.annotations.assign(model.names.size(), {});
+    for (std::size_t i = 0; i < model.names.size(); ++i) {
+        const auto found = config.stages.find(model.names[i]);
+        if (found != config.stages.end()) {
+            model.annotations[i] = AnnotationsFor(found->second);
+        }
+    }
     return model;
 }
 
@@ -225,6 +278,16 @@ std::string Mermaid(const Model& model) {
     out += "flowchart LR\n";
     out += "    %% kit-ci gate flow — from the parsed gate.toml; same config, same bytes\n";
     out += "    %% one node per stage, one edge per step in a tier's run order\n";
+    bool any_annotated = false;
+    for (const std::vector<std::string>& notes : model.annotations) {
+        if (!notes.empty()) {
+            any_annotated = true;
+            break;
+        }
+    }
+    if (any_annotated) {
+        out += "    %% a node's second line is what the stage deviates on; no line, default\n";
+    }
     if (!model.repo.empty()) {
         out += "    %% repo: ";
         out += OneLine(model.repo);
@@ -235,6 +298,12 @@ std::string Mermaid(const Model& model) {
         out += NodeId(i);
         out += "[\"";
         out += XmlEscape(model.names[i]);
+        // SPEC.md §7: the compact second line is what the stage deviates on, and nothing at
+        // all when it deviates on nothing — the silence IS the statement that it is standard.
+        if (!model.annotations[i].empty()) {
+            out += "<br/>";
+            out += XmlEscape(OneLine(JoinAnnotations(model.annotations[i], ", ")));
+        }
         out += "\"]\n";
     }
     for (const Edge& edge : model.edges) {
@@ -428,6 +497,11 @@ constexpr const char* kStyle = R"css(
   .legend { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 16px; font-size: 12px; }
   .legend span { display: inline-flex; align-items: center; gap: 8px; }
   .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  .details { margin-top: 16px; font-size: 12px; }
+  .details h2 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: #cbd5e1; }
+  .details ul { margin: 0; padding-left: 18px; }
+  .details li { margin: 2px 0; }
+  .details b { color: #e2e8f0; }
   footer { margin-top: 16px; font-size: 10px; color: #475569; }
 )css";
 
@@ -569,6 +643,30 @@ std::string Html(const Model& model) {
         out += "\"></i>no tier</span>\n";
     }
     out += "</div>\n";
+    // SPEC.md §7: a box in the SVG has no room for a second line, so the page carries the
+    // detail panel instead — one row per stage that DEVIATES, and rows only for those. A page
+    // with no deviations has no panel: the same statement the blank boxes make.
+    bool any_deviations = false;
+    for (const std::vector<std::string>& notes : model.annotations) {
+        if (!notes.empty()) {
+            any_deviations = true;
+            break;
+        }
+    }
+    if (any_deviations) {
+        out += "<div class=\"details\">\n<h2>non-default stage settings</h2>\n<ul>\n";
+        for (std::size_t node = 0; node < model.names.size(); ++node) {
+            if (model.annotations[node].empty()) {
+                continue;
+            }
+            out += "  <li><b>";
+            out += XmlEscape(model.names[node]);
+            out += "</b> — ";
+            out += HtmlDisplay(OneLine(JoinAnnotations(model.annotations[node], ", ")));
+            out += "</li>\n";
+        }
+        out += "</ul>\n</div>\n";
+    }
     out +=
         "<footer>kit-ci --graph (--format html) · same config, same bytes · opens from a "
         "file:// URL with no network</footer>\n";
@@ -632,9 +730,15 @@ std::string Dot(const Model& model) {
                 out += "\", color=\"";
                 out += color.stroke;
                 // Cluster membership is ambiguous for a stage several tiers run (the owning
-                // cluster is the one that declares it), so the node says its own answer.
-                out += "\", comment=\"tiers: ";
-                out += DotEscape(TierList(model, node));
+                // cluster is the one that declares it), so the node says its own answer — and
+                // the same comment is where a deviation is recorded (SPEC.md §7), because it
+                // is the one free-text slot a dot node already carries.
+                std::string comment = "tiers: " + TierList(model, node);
+                if (!model.annotations[node].empty()) {
+                    comment += "; " + JoinAnnotations(model.annotations[node], "; ");
+                }
+                out += "\", comment=\"";
+                out += DotEscape(OneLine(comment));
                 out += "\"];\n";
             } else {
                 out += "    ";

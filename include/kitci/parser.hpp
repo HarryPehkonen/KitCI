@@ -12,17 +12,24 @@
 
 namespace kitci {
 
+// The stage defaults, named once: the parser's Stage applies them, --ast materialises them
+// (SPEC.md §7), and a graph annotation is silent about them — so "the default changed" cannot
+// become a bug in two places at once.
+inline constexpr const char* kDefaultFailOn = "nonzero";
+inline constexpr long kDefaultTimeout = 300;
+inline constexpr const char* kDefaultSummary = "head:40";
+
 // One [stage.X] table.
 struct Stage {
     std::string name;
-    std::string cmd;                  // required
-    std::string tier;                 // optional; adds this stage to that tier's list
-    std::string fail_on = "nonzero";  // "nonzero" | "output:<regex>" | "exit:<n>"
-    long timeout = 300;               // seconds; 0 = no timeout
-    std::string files;                // optional glob, only meaningful with --changed
-    std::string when;                 // optional "tool:<name>"
-    std::string summary = "head:40";  // how much failed output to show
-    int line = 0;                     // 1-based line of the [stage.X] header
+    std::string cmd;                        // required
+    std::string tier;                       // optional; adds this stage to that tier's list
+    std::string fail_on = kDefaultFailOn;   // "nonzero" | "output:<regex>" | "exit:<n>"
+    long timeout = kDefaultTimeout;         // seconds; 0 = no timeout
+    std::string files;                      // optional glob, only meaningful with --changed
+    std::string when;                       // optional "tool:<name>"
+    std::string summary = kDefaultSummary;  // how much failed output to show
+    int line = 0;                           // 1-based line of the [stage.X] header
 };
 
 // One [tier.X] table.

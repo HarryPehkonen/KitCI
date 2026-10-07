@@ -193,3 +193,71 @@ TEST(GraphTest, GraphFormatNamesAreExact) {
     EXPECT_FALSE(kitci::parse_graph_format("", &format));
     EXPECT_FALSE(kitci::parse_graph_format("Mermaid", &format));
 }
+
+namespace {
+
+// The v1.1 fixture: one stage that deviates on every attribute that has a default, and one
+// that deviates on none of them.
+const char* const kAnnotatedToml = R"toml([gate]
+repo = "annotated"
+
+[tier.full]
+stages = ["plain", "deviant"]
+
+[stage.plain]
+cmd = "true"
+
+[stage.deviant]
+cmd = "pytest -q"
+fail_on = "exit:5"
+timeout = 60
+files = "*.py"
+when = "tool:ruff"
+)toml";
+
+}  // namespace
+
+// The v1.1 amendment (SPEC.md §7): a node annotates only the settings a stage deviates on.
+// Defaults are what NO annotation means, so a reader sees exactly how a stage leaves them.
+TEST(GraphTest, GraphAnnotatesNonDefaultAttributes) {
+    const kitci::ParseResult result = kitci::parse_gate_toml(kAnnotatedToml);
+    ASSERT_TRUE(result.ok) << result.error.message;
+    const std::string mermaid = kitci::graph_mermaid(result.config);
+    const std::string html = kitci::graph_html(result.config);
+    const std::string dot = kitci::graph_dot(result.config);
+    for (const std::string* text : {&mermaid, &html, &dot}) {
+        EXPECT_TRUE(Contains(*text, "fail_on exit:5")) << *text;
+        EXPECT_TRUE(Contains(*text, "timeout 60")) << *text;
+        EXPECT_TRUE(Contains(*text, "files *.py")) << *text;
+        EXPECT_TRUE(Contains(*text, "when tool:ruff")) << *text;
+    }
+    // And the defaults are silent: `plain` declares none of the four, so it carries no
+    // annotation in any format. The Mermaid node label is the bare name.
+    EXPECT_TRUE(Contains(mermaid, "s0[\"plain\"]")) << mermaid;
+    // dot: the node's comment is the tier list and nothing else.
+    EXPECT_TRUE(Contains(dot, "comment=\"tiers: full\"]")) << dot;
+    // HTML: the detail panel names only the stage that deviates.
+    const std::size_t details = html.find("<div class=\"details\">");
+    ASSERT_NE(details, std::string::npos) << html;
+    EXPECT_NE(html.find("deviant", details), std::string::npos) << html;
+    EXPECT_EQ(html.find("plain", details), std::string::npos) << html;
+}
+
+TEST(GraphTest, GraphAnnotationsAreStable) {
+    const kitci::ParseResult first = kitci::parse_gate_toml(kAnnotatedToml);
+    const kitci::ParseResult second = kitci::parse_gate_toml(kAnnotatedToml);
+    ASSERT_TRUE(first.ok) << first.error.message;
+    ASSERT_TRUE(second.ok) << second.error.message;
+    const std::vector<std::string> a = RenderAll(first.config);
+    const std::vector<std::string> b = RenderAll(second.config);
+    ASSERT_EQ(a.size(), 3U);
+    // An annotation is not a licence to become a function of something else: same config,
+    // same bytes, still a whole document per format.
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        EXPECT_FALSE(a[i].empty()) << "format " << i << " produced nothing";
+        EXPECT_EQ(a[i], b[i]) << "format " << i << " is not byte-stable with annotations";
+    }
+    EXPECT_TRUE(Contains(a[0], "flowchart")) << a[0];
+    EXPECT_TRUE(Contains(a[1], "<!DOCTYPE html>")) << a[1];
+    EXPECT_EQ(a[2].back(), '\n');
+}

@@ -41,6 +41,7 @@ kit-ci                       run default tier
 kit-ci --tier fast|full      run a named tier
 kit-ci --changed             scope stage file globs to files changed vs merge-base with main
 kit-ci --list                print stages, tiers, and which stages are in which tier
+kit-ci --ast                 print the parsed config as canonical JSON (one reading of it)
 kit-ci --graph               print the flow as Mermaid text (stages, tiers, flow)
 kit-ci --graph-html          print a standalone HTML page embedding the diagram
 kit-ci --gate <path>         config path (default: gate.toml in repo root)
@@ -156,9 +157,17 @@ Follow AI-DEV-STARTER's PLUNK-IN for the C++ template, adapted:
 - **Do not add `.github/workflows/` or any hosted CI.** Gates live in the repo.
 - Commit hooks: the kit's, wired and working. Do not commit with `--no-verify`.
 
-## 7. Graph outputs (the part Harri asked for by name)
+## 7. The config, presented: graphs and the canonical AST (the part Harri asked for by name)
 
-Two graph modes, both derived from the parsed config — never a stale drawing:
+Every mode here is a **reading of one parse** — the same parse the runner runs, never a second
+one and never a stale drawing — and every one of them is byte-stable for a given config (same
+config in, same bytes out) so the output can be golden-file tested and diffed. A mode refuses
+to be one of two answers at once: `--list`, `--graph` and `--ast` are three different outputs,
+and asking for two of them is exit `2`.
+
+### 7.1 The graphs
+
+Two graph modes, both derived from the parsed config:
 - `--graph`: Mermaid `flowchart` text. One node per stage, colored by tier membership,
   edges in run order. A human pastes it into any Mermaid renderer.
 - `--graph-html`: a **standalone HTML page** — no JavaScript, no external requests,
@@ -166,8 +175,54 @@ Two graph modes, both derived from the parsed config — never a stale drawing:
   dark background, box per stage, arrows in run order, a legend). It must open
   directly from a file:// URL with no network access.
 
-Both must be byte-stable for a given config (same config in, same bytes out) so they
-can be golden-file tested and diffed.
+The stage-C amendment adds `--graph --format mermaid|html|dot` (`mermaid` is the default,
+`--graph-html` stays as the documented shorthand for `--graph --format html`), and an unknown
+or missing format name is exit `2` (QUESTIONS.md Q17).
+
+### 7.2 Node annotations: a default is what NO annotation means
+
+A node annotates exactly what a stage **deviates** on, and nothing else. The reader's rule is
+"no annotation, default setting", so what is written on a node is precisely the list of ways
+that stage is not the standard one — and a stage that writes nothing standard carries no
+annotation anywhere. The annotatable settings are the five with a default or an absent state:
+`fail_on`, `timeout`, `files`, `when`, `summary`. `cmd` is never an annotation (every stage has
+one) and neither is `tier` (membership is already the colour, the cluster and the label).
+Each format spends the room it has:
+- **Mermaid**: a compact second line in the node label, after `<br/>` — a stage with a default
+  is a one-line label.
+- **HTML**: a detail panel under the diagram, one row per deviating stage. The SVG box has no
+  room for a second line, and the page is standalone already.
+- **dot**: the node's own `comment` attribute, which already carried the stage's tier list.
+
+Annotations are text escaped by the same rules as every other label (SPEC.md §5), and the HTML
+keeps its byte-level self-containment: an annotation carrying a URL is written with an entity,
+like the repo name (Q29).
+
+### 7.3 `--ast` — the parsed config as canonical JSON
+
+`--ast` prints the whole parsed config as canonical JSON on stdout and exits `0`. It is the
+machine's reading of one parse, for diffing, for a tool that wants the policy as data, and for
+`jq`. The form is fixed, not a matter of taste:
+
+- one JSON document, newline-terminated, 2-space indentation, one array element per line;
+- top-level keys in this order: `gate`, `tiers`, `stages`;
+- `gate`: `repo` (a string, or `null` when the config did not write one) and `strict`;
+- `tiers`: **declaration order**, each `{name, stages}`, where `stages` is the run order a run
+  of that tier would use — `"*"` already expanded and `tier = "..."` membership already
+  included, i.e. exactly what `resolved_stages()` returns and what `--list` prints for it;
+- `stages`: **declaration order** — the `--list` order, not alphabetical — each with every
+  attribute the grammar documents: `name`, `cmd`, `tier`, `fail_on`, `timeout`, `files`,
+  `when`, `summary`;
+- **defaults are materialised** (the runner's view of "what will this gate actually do"): a
+  stage that wrote no `fail_on` shows `"fail_on": "nonzero"`, no `timeout` shows
+  `"timeout": 300`, no `summary` shows `"summary": "head:40"`;
+- the optional strings with no default action (`tier`, `files`, `when`) are `null` when the
+  config did not write them — which is exactly how the runner reads the `""` the parser stores;
+- **semantic only**: no line numbers and no source positions. The grammar appendix (below)
+  carries the positional truth; `--ast` carries the meaning;
+- escaping is JSON's own (RFC 8259): a quote or a backslash in `cmd` is escaped, no key is
+  dropped, and no config the parser accepted is refused. A config that does not parse is the
+  parser's error, exit `2`, with no partial document.
 
 ## 8. Tests to write first (frozen list — these names, this meaning)
 
@@ -195,6 +250,23 @@ Graphs:
 - `GraphIsStableForSameConfig` — two parses, identical bytes.
 - `GraphListsEveryStage` / `GraphHtmlIsSelfContained` — no `http://` or `https://`
   references in the HTML output.
+
+Graphs (v1.1):
+- `GraphAnnotatesNonDefaultAttributes` — `fail_on "exit:5"`, `timeout 60`, `when "tool:ruff"`
+  and `files "*.py"` appear on the node in each format, and a stage carrying every default
+  carries no annotation in any of them.
+- `GraphAnnotationsAreStable` — annotated output is byte-stable too, and still one whole
+  document per format.
+
+The canonical AST (v1.1):
+- `AstIsStableForSameConfig` — the same `gate.toml` parsed twice, byte-identical stdout.
+- `AstMaterializesDefaults` — a stage that omits `timeout`/`fail_on` shows them resolved
+  (`"nonzero"`, `300`) in the output.
+- `AstCoversEveryDocumentedKey` — every stage attribute in the grammar appears in the output
+  for a fully-specified config (`cmd`, `tier`, `fail_on`, `timeout`, `files`, `when`,
+  `summary`; `[gate]`'s `repo` and `strict`; tiers and their stage lists).
+- `AstRejectsOrEscapesNothingNew` — `--ast` on a config that fails to parse exits `2` with the
+  parser's own error and no partial JSON.
 
 CLI:
 - `ListAnswersWithoutReadingSource` — `--list` output for a fixture config, parsed
@@ -238,3 +310,83 @@ Do not grade yourself, do not summarise your approach, do not describe the code.
 gate decides whether this worked; your job is to report what it did. If you could not
 finish a stage, say which part and stop — an honest stop is a valid result, and a
 claim you cannot back with gate output is not.
+
+## Appendix A — the grammar of `gate.toml` (EBNF)
+
+The parser is the reference implementation; this appendix is the same contract written down, so
+that the whole syntax can be read in one place. It was written *after* the parser and changed
+nothing: where the two disagree, the parser is the bug to fix. This is the **syntax** only —
+§3's ten rules are the semantic checks sitting on top of it, which is why a bare `true` is a
+well-formed `value` here and still a fault as a `cmd`.
+
+    gate.toml   = { line } ;
+    line        = blank | table | entry ;
+
+    blank       = { ws } , end-of-line ;
+
+    table       = { ws } , "[" , head , "]" , { ws } , end-of-line ;
+    head        = "gate"
+                | ( "stage" | "tier" ) , "." , ident ;
+
+    entry       = { ws } , key , { ws } , "=" , { ws } , value , { ws } , end-of-line ;
+    key         = ident ;
+
+    ident       = ident-char , { ident-char } ;
+    ident-char  = letter | digit | "_" | "-" ;
+    letter      = "A"-"Z" | "a"-"z" ;
+    digit       = "0"-"9" ;
+
+    value       = string | array | integer | boolean ;
+    string      = '"' , { string-byte | escape } , '"' ;
+    string-byte = ? any byte except '"' , "\" , and the line's end of line ? ;
+    escape      = "\" , ? any byte, taken literally ? ;
+    array       = "[" , { ws } , [ item , { { ws } , "," , { ws } , item } , [ "," ] ] ,
+                  { ws } , "]" ;
+    item        = string ;
+    integer     = [ "-" ] , digit , { digit } ;
+    boolean     = "true" | "false" ;
+
+    ws          = " " | "\t" | "\r" ;
+    end-of-line = "\n" | end-of-input ;
+
+What the productions do not say, and the parser does — each of these is a fact about the
+implementation, checked against it rather than inferred from it:
+
+1. **A line is one line.** `end-of-line` is the only place a value ends, so neither a `string`
+   nor an `array` ever spans lines: a `[` on one line and its items on the next is
+   `unterminated array`.
+2. **A comment is stripped before the rest of the line is read.** The `#` that starts a comment
+   is the first `#` that is not inside a `string`, and inside a `string` a `\` makes the next
+   byte part of the string rather than the `#` a comment. What follows a `#` is never parsed at
+   all, so `[gate#` is read as a `table` with its `]` missing (the header fault), not as a
+   comment after a valid header. A `#` inside a string is an ordinary byte (`cmd = "a#b"`).
+3. **An `escape` takes the next byte literally, whatever it is.** `\"` is a `"`, `\\` is a `\`
+   and `\n` is the letter `n` — not a newline. A `\` immediately before the closing `"` escapes
+   it, so the string has no terminator and the fault is `unterminated string`. This is the one
+   place the subset deliberately does not follow TOML's escape set (`\n`, `\t`, `\uXXXX`, …):
+   the free-text values are shell strings, `/bin/sh` does its own interpreting, and a `cmd` that
+   wants a newline can write a shell escape. Recorded, not changed, in QUESTIONS.md.
+4. **Trailing characters are a fault, never partly read.** After a `table`'s `]` and after an
+   `entry`'s `value`, only `ws` may follow. `[gate]x` is rejected on its own line; for
+   `cmd = "a" "b"` the entry is never recorded, so the stage it belonged to ALSO has no `cmd` —
+   and since the `[stage.X]` header is on an earlier line, §5's earliest-line rule is what
+   reports it (`stage 'x' has no cmd`), not the trailing-character fault. Both faults are real;
+   only one can be the answer.
+5. **`entry` is context-sensitive and the grammar above is flat.** An `entry` belongs to the
+   most recent preceding `table`; a key before the first table header is
+   `key '<k>' outside any table`. `[gate]` may appear anywhere in the file (at most once), and
+   the entries that follow each table header are that table's, in file order.
+6. **Tables may appear in any order**, and the cross-references — a `tier` naming a tier with
+   no `[tier.X]`, `stages` naming a stage that is not declared — are checked after the whole
+   file has been read. When a file holds several faults, the one reported is the one on the
+   EARLIEST line (QUESTIONS.md Q2); ties go to the fault found first.
+7. **`ident` is `[A-Za-z0-9_-]+` and nothing else.** `[ stage.x ]`, an empty name (`[stage.]`)
+   and a three-part header (`[stage.a.b]`) are all faults, while `[stage.9]` and `[stage.-]`
+   are legal names. The free-text keys (`repo`, `cmd`, `fail_on`, `files`, `when`, `summary`)
+   are NOT idents: they are `string`s, and anything the shell — or, for `output:<regex>`, the
+   regex engine — accepts fits in them.
+8. **One rule here is conditional on another line.** An empty (or `ws`-only) `cmd` is a fault
+   unless `[gate]` says `strict = false`, in which case the same bytes parse (§3 rule 2, the
+   spec-owner ruling in QUESTIONS.md Q30). It is the only production whose outcome depends on a
+   different line of the same file.
+

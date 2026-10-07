@@ -341,3 +341,33 @@ TEST(CliTest, GraphOnAConfigWithNoStagesStillAnswers) {
     EXPECT_EQ(result.exit_code, 0) << result.output;
     EXPECT_NE(result.output.find("flowchart"), std::string::npos) << result.output;
 }
+
+TEST(CliTest, AstRejectsOrEscapesNothingNew) {
+    // A config that does not parse is the PARSER's answer, not --ast's: exit 2, the parser's
+    // own message, and no partial document — an --ast that invented its own rejection, or
+    // printed half a document, would be reading the config a second time.
+    const CommandResult bad =
+        RunCommand(std::string("--gate ") + kFixtures + "/invalid.toml --ast");
+    EXPECT_EQ(bad.exit_code, 2) << bad.output;
+    EXPECT_NE(bad.output.find("colur"), std::string::npos) << bad.output;
+    EXPECT_EQ(bad.output.find('{'), std::string::npos) << bad.output;
+
+    // And it refuses nothing the parser accepted: every valid config renders.
+    const CommandResult good = RunCommand(ListGate() + " --ast");
+    EXPECT_EQ(good.exit_code, 0) << good.output;
+    EXPECT_EQ(good.output.rfind("{\n", 0), 0U) << good.output;
+    EXPECT_EQ(good.output.back(), '\n');
+    EXPECT_NE(good.output.find("\"stages\""), std::string::npos) << good.output;
+}
+
+TEST(CliTest, AstIsOneOutputAtATime) {
+    // --ast, --list and --graph are three answers about one config, and two of them cannot
+    // both be the output. Like --list --graph, asking for two is exit 2, and the message
+    // names the flags so the fix is obvious.
+    for (const std::string& flags : {std::string("--ast --list"), std::string("--ast --graph"),
+                                     std::string("--ast --graph-html")}) {
+        const CommandResult result = RunCommand(ListGate() + " " + flags);
+        EXPECT_EQ(result.exit_code, 2) << flags << ": " << result.output;
+        EXPECT_NE(result.output.find("--ast"), std::string::npos) << result.output;
+    }
+}

@@ -59,6 +59,7 @@ docsum has no such stage). A hand run is never required to be clean.
 ```bash
 kit-ci --list     # stages, tiers, and which stages are in which tier
 kit-ci --graph    # the flow as Mermaid text (--format dot | html for the other two)
+kit-ci --ast      # the parsed config as canonical JSON (pipe it to jq)
 ```
 
 Stage attributes: `cmd` (a shell string — the escape hatch), `tier`, `fail_on` (`nonzero`,

@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "kitci/ast.hpp"
 #include "kitci/graph.hpp"
 #include "kitci/parser.hpp"
 #include "kitci/runner.hpp"
@@ -16,7 +17,7 @@
 namespace {
 
 constexpr const char* kUsage =
-    "usage: kit-ci [--gate <path>] [--tier fast|full] [--changed] [--list]\n"
+    "usage: kit-ci [--gate <path>] [--tier fast|full] [--changed] [--list] [--ast]\n"
     "              [--graph [--format mermaid|html|dot]] [--strict|--no-strict]\n"
     "\n"
     "  (no arguments)   run the default tier: 'full' when the config declares it, else the\n"
@@ -24,6 +25,7 @@ constexpr const char* kUsage =
     "  --tier <name>    run a named tier\n"
     "  --changed        scope stage file globs to files changed vs merge-base with main\n"
     "  --list           print stages, tiers, and which stages are in which tier\n"
+    "  --ast            print the parsed config as canonical JSON — one reading, for machines\n"
     "  --graph          print the gate flow as text — the config explains itself\n"
     "  --format <name>  graph format: mermaid (default), html, or dot\n"
     "  --graph-html     shorthand for --graph --format html\n"
@@ -111,6 +113,7 @@ int main(int argc, char** argv) {
     std::string tier_name;
     bool list = false;
     bool graph = false;
+    bool ast = false;
     bool format_given = false;
     bool changed = false;
     bool strict = true;
@@ -132,6 +135,8 @@ int main(int argc, char** argv) {
             tier_name = argv[++i];
         } else if (arg == "--list") {
             list = true;
+        } else if (arg == "--ast") {
+            ast = true;
         } else if (arg == "--changed") {
             changed = true;
         } else if (arg == "--strict") {
@@ -172,8 +177,14 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "kit-ci: --format needs --graph (or --graph-html)\n");
         return 2;
     }
-    if (list && graph) {
-        std::fprintf(stderr, "kit-ci: --list and --graph ask for two different outputs\n");
+    // Each of these three flags IS an output, and one process prints one output. Asking for
+    // two is refused rather than silently resolved: printing one and dropping the other would
+    // be exactly the silent-wrong-answer class this tool exists to avoid.
+    const int outputs = (list ? 1 : 0) + (graph ? 1 : 0) + (ast ? 1 : 0);
+    if (outputs > 1) {
+        std::fprintf(stderr,
+                     "kit-ci: --list, --graph and --ast ask for three different outputs — ask "
+                     "for one\n");
         return 2;
     }
 
@@ -203,6 +214,17 @@ int main(int argc, char** argv) {
                          "the graph is a function of the whole config\n");
         }
         std::fputs(kitci::graph_render(config, format).c_str(), stdout);
+        return 0;
+    }
+    if (ast) {
+        // Like the graph, the AST is a reading of the WHOLE config, so a run option has
+        // nothing to act on — and saying so beats looking like it did something.
+        if (!tier_name.empty() || changed || !strict) {
+            std::fprintf(stderr,
+                         "kit-ci: --ast ignores run options (--tier, --changed, --strict): the "
+                         "AST is a function of the whole config\n");
+        }
+        std::fputs(kitci::ast_json(config).c_str(), stdout);
         return 0;
     }
 
