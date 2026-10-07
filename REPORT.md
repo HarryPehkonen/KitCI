@@ -12,10 +12,12 @@ engine behaviour, but it did add an `install(TARGETS kit-ci RUNTIME DESTINATION 
 CMakeLists.txt, so a machine installs the engine instead of finding it in a build tree. That rule is
 NOT covered by ctest: it is covered by running it — `cmake --install build --prefix ~/.local`
 installed 3.0 MB to ~/.local/bin/kit-ci, and every docsum run below is that binary.)
-Fuzz stage: runs / seconds / artifacts: 3 invocations at 60 seconds each; 1 artifact, fixed in this
+Fuzz stage: runs / seconds / artifacts: 4 invocations at 60 seconds each; 1 artifact, fixed in this
 sitting. Default tier: 442,338 inputs / 0 artifacts. Pre-push tier on 1596500: 459,041 inputs /
 0 artifacts. Pre-push tier on the report commit: **123,240 inputs / 1 artifact**, which is why that
-push was refused. The artifact
+push was refused. Pre-push tier on the fix (2b2c8da): 425,125 inputs / 0 artifacts. (Every push runs
+one more 60-second campaign, so for the version you are reading the number is a lower bound by one;
+those verdicts are in gate-evidence/KitCI/.) The artifact
 (`.ci-logs/fuzz-artifacts/crash-300de12c3ac55acba12edd364e9b90eacaaa41cf`, preserved at
 `gate-evidence/KitCI/fuzz-artifact-repo-name-with-a-url.input`) is a config whose
 `repo = "kit-chttp://i"` made the standalone HTML page carry an absolute URL inside its `<p>` — the
