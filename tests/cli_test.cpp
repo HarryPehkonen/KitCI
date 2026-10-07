@@ -132,6 +132,11 @@ bool ParseListing(const std::string& output, Listing* listing) {
     return !listing->stages.empty();
 }
 
+// The config every graph test feeds the binary: two tiers over three stages.
+std::string ListGate() {
+    return std::string("--gate ") + kFixtures + "/list.toml";
+}
+
 }  // namespace
 
 TEST(CliTest, ListAnswersWithoutReadingSource) {
@@ -252,4 +257,87 @@ files = "*.py"
 
     std::error_code error;
     std::filesystem::remove_all(dir, error);
+}
+
+TEST(CliTest, GraphDefaultsToMermaid) {
+    const CommandResult bare = RunCommand(ListGate() + " --graph");
+    const CommandResult named = RunCommand(ListGate() + " --graph --format mermaid");
+    EXPECT_EQ(bare.exit_code, 0) << bare.output;
+    EXPECT_EQ(named.exit_code, 0) << named.output;
+    // The default format is mermaid, and it is the same output either way.
+    EXPECT_EQ(bare.output, named.output);
+    EXPECT_NE(bare.output.find("flowchart"), std::string::npos) << bare.output;
+    for (const char* stage : {"format", "lint", "tests"}) {
+        EXPECT_NE(bare.output.find(stage), std::string::npos) << bare.output;
+    }
+}
+
+TEST(CliTest, GraphHtmlShorthandMatchesTheFormatFlag) {
+    const CommandResult shorthand = RunCommand(ListGate() + " --graph-html");
+    const CommandResult explicit_format = RunCommand(ListGate() + " --graph --format html");
+    EXPECT_EQ(shorthand.exit_code, 0) << shorthand.output;
+    EXPECT_NE(shorthand.output.find("<!DOCTYPE html>"), std::string::npos) << shorthand.output;
+    EXPECT_EQ(shorthand.output, explicit_format.output);
+}
+
+TEST(CliTest, GraphEmitsDotWhenAsked) {
+    const CommandResult result = RunCommand(ListGate() + " --graph --format dot");
+    EXPECT_EQ(result.exit_code, 0) << result.output;
+    EXPECT_EQ(result.output.rfind("digraph", 0), 0U) << result.output;
+    EXPECT_NE(result.output.find("subgraph \"cluster_tier0\""), std::string::npos) << result.output;
+}
+
+TEST(CliTest, GraphRejectsUnknownFormatWithExitTwo) {
+    const CommandResult result = RunCommand(ListGate() + " --graph --format svg");
+    EXPECT_EQ(result.exit_code, 2) << result.output;
+    EXPECT_NE(result.output.find("svg"), std::string::npos) << result.output;
+    // The message has to say what the answer is, not just what it is not.
+    EXPECT_NE(result.output.find("mermaid"), std::string::npos) << result.output;
+    EXPECT_NE(result.output.find("dot"), std::string::npos) << result.output;
+}
+
+TEST(CliTest, GraphMissingFormatValueExitsTwo) {
+    const CommandResult result = RunCommand(ListGate() + " --graph --format");
+    EXPECT_EQ(result.exit_code, 2) << result.output;
+    EXPECT_NE(result.output.find("--format"), std::string::npos) << result.output;
+}
+
+TEST(CliTest, FormatWithoutGraphExitsTwo) {
+    // A flag that would do nothing is not accepted quietly: --format only means something
+    // with --graph.
+    const CommandResult result = RunCommand(ListGate() + " --format dot");
+    EXPECT_EQ(result.exit_code, 2) << result.output;
+    EXPECT_NE(result.output.find("--format"), std::string::npos) << result.output;
+}
+
+TEST(CliTest, GraphNotesTheRunOptionsItCannotHonour) {
+    // The graph is a function of the whole config, so --tier cannot narrow it. Saying so
+    // beats looking like it did something.
+    const CommandResult result = RunCommand(ListGate() + " --graph --tier fast");
+    EXPECT_EQ(result.exit_code, 0) << result.output;
+    EXPECT_NE(result.output.find("flowchart"), std::string::npos) << result.output;
+    EXPECT_NE(result.output.find("--tier"), std::string::npos) << result.output;
+}
+
+TEST(CliTest, ListAndGraphTogetherExitTwo) {
+    const CommandResult result = RunCommand(ListGate() + " --list --graph");
+    EXPECT_EQ(result.exit_code, 2) << result.output;
+    EXPECT_NE(result.output.find("--list"), std::string::npos) << result.output;
+    EXPECT_NE(result.output.find("--graph"), std::string::npos) << result.output;
+}
+
+TEST(CliTest, GraphOnInvalidConfigExitsTwo) {
+    const CommandResult result =
+        RunCommand(std::string("--gate ") + kFixtures + "/invalid.toml --graph");
+    EXPECT_EQ(result.exit_code, 2) << result.output;
+    EXPECT_NE(result.output.find("colur"), std::string::npos) << result.output;
+}
+
+TEST(CliTest, GraphOnAConfigWithNoStagesStillAnswers) {
+    // Exit 2 means "nothing ran", and that is a RUN's answer (SPEC.md §2). --graph answered:
+    // it rendered the (empty) flow, which is the truth about a config with no stages.
+    const CommandResult result =
+        RunCommand(std::string("--gate ") + kFixtures + "/zero_stages.toml --graph");
+    EXPECT_EQ(result.exit_code, 0) << result.output;
+    EXPECT_NE(result.output.find("flowchart"), std::string::npos) << result.output;
 }

@@ -1,13 +1,15 @@
 // kit-ci — a CI gate engine that reads a per-repo gate.toml (SPEC.md).
 //
 // This file owns the command line, the tiers and everything a human reads. What a stage
-// means is the runner's (include/kitci/runner.hpp); what a config may say is the parser's.
+// means is the runner's (include/kitci/runner.hpp); what a config may say is the parser's;
+// what the config looks like is the graphs' (include/kitci/graph.hpp).
 #include <cstdio>
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <vector>
 
+#include "kitci/graph.hpp"
 #include "kitci/parser.hpp"
 #include "kitci/runner.hpp"
 
@@ -15,15 +17,16 @@ namespace {
 
 constexpr const char* kUsage =
     "usage: kit-ci [--gate <path>] [--tier fast|full] [--changed] [--list]\n"
-    "              [--graph] [--graph-html] [--strict|--no-strict]\n"
+    "              [--graph [--format mermaid|html|dot]] [--strict|--no-strict]\n"
     "\n"
     "  (no arguments)   run the default tier: 'full' when the config declares it, else the\n"
     "                   first tier it declares\n"
     "  --tier <name>    run a named tier\n"
     "  --changed        scope stage file globs to files changed vs merge-base with main\n"
     "  --list           print stages, tiers, and which stages are in which tier\n"
-    "  --graph          print the flow as Mermaid text\n"
-    "  --graph-html     print a standalone HTML page embedding the diagram\n"
+    "  --graph          print the gate flow as text — the config explains itself\n"
+    "  --format <name>  graph format: mermaid (default), html, or dot\n"
+    "  --graph-html     shorthand for --graph --format html\n"
     "  --gate <path>    config path (default: gate.toml in the repo root)\n"
     "  --strict         strictness; the default — a stage with an empty cmd is a failure\n"
     "  --no-strict      run an empty cmd as the no-op it is\n"
@@ -107,9 +110,11 @@ int main(int argc, char** argv) {
     std::string gate_path = "gate.toml";
     std::string tier_name;
     bool list = false;
+    bool graph = false;
+    bool format_given = false;
     bool changed = false;
     bool strict = true;
-    std::string deferred;  // a mode stage C owns, accepted but not answered yet
+    kitci::GraphFormat format = kitci::GraphFormat::kMermaid;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -133,15 +138,43 @@ int main(int argc, char** argv) {
             strict = true;
         } else if (arg == "--no-strict") {
             strict = false;
+        } else if (arg == "--graph") {
+            graph = true;
+        } else if (arg == "--graph-html") {
+            // Documented shorthand for --graph --format html. Flags are read left to right,
+            // so a later --format still wins.
+            graph = true;
+            format = kitci::GraphFormat::kHtml;
+        } else if (arg == "--format") {
+            if (i + 1 >= argc) {
+                std::fprintf(stderr, "kit-ci: --format needs a value (mermaid, html or dot)\n");
+                return 2;
+            }
+            const std::string value = argv[++i];
+            if (!kitci::parse_graph_format(value, &format)) {
+                std::fprintf(stderr, "kit-ci: unknown --format '%s' (want mermaid, html or dot)\n",
+                             value.c_str());
+                return 2;
+            }
+            format_given = true;
         } else if (arg == "--help" || arg == "-h") {
             std::fputs(kUsage, stdout);
             return 0;
-        } else if (arg == "--graph" || arg == "--graph-html") {
-            deferred = arg;
         } else {
             std::fprintf(stderr, "kit-ci: unknown option '%s' (try --help)\n", arg.c_str());
             return 2;
         }
+    }
+
+    // A flag that would do nothing is refused rather than accepted quietly: the graph is a
+    // function of the whole config, and two output modes cannot both be the output.
+    if (format_given && !graph) {
+        std::fprintf(stderr, "kit-ci: --format needs --graph (or --graph-html)\n");
+        return 2;
+    }
+    if (list && graph) {
+        std::fprintf(stderr, "kit-ci: --list and --graph ask for two different outputs\n");
+        return 2;
     }
 
     bool read_ok = false;
@@ -161,9 +194,16 @@ int main(int argc, char** argv) {
     if (list) {
         return PrintList(config);
     }
-    if (!deferred.empty()) {
-        std::fprintf(stderr, "kit-ci: %s is not implemented yet (stage C)\n", deferred.c_str());
-        return 2;
+    if (graph) {
+        // The graph shows every stage and every tier, so a run option has nothing to act on.
+        // Saying so is the difference between "ignored" and "silently ignored".
+        if (!tier_name.empty() || changed || !strict) {
+            std::fprintf(stderr,
+                         "kit-ci: --graph ignores run options (--tier, --changed, --strict): "
+                         "the graph is a function of the whole config\n");
+        }
+        std::fputs(kitci::graph_render(config, format).c_str(), stdout);
+        return 0;
     }
 
     // The tier a bare `kit-ci` runs: hook tiers are named, and a human running the gate by
