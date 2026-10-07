@@ -70,20 +70,25 @@ Credit where it is due, and no pretending otherwise:
 
 ## Status
 
-**Stages A, B and C — the parser, the runner and the graphs.** `kit-ci` parses `gate.toml`
-(every documented key, every rejection rule, a 1-based line number on every error), answers
-`--list`, runs a tier (every stage in run order, `fail_on`, `timeout`, the `when` and
-`--changed`/`files` skips, one verdict line, exit codes 0/1/2), and renders the config in
-three text formats. Stage D (converting the `docsum` repo to a `gate.toml`) is named in
-`SPEC.md` §9 and is not started.
+**Stages A–D — the parser, the runner, the graphs, and the first converted repo.** `kit-ci`
+parses `gate.toml` (every documented key, every rejection rule, a 1-based line number on every
+error), answers `--list`, runs a tier (every stage in run order, `fail_on`, `timeout`, the `when`
+and `--changed`/`files` skips, one verdict line, exit codes 0/1/2), and renders the config in
+three text formats. Stage D converted the `docsum` repo: its gate is now `gate.toml` (six stages,
+two tiers) plus a 36-line wrapper and four small stage scripts — 239 lines of repo-owned shell
+where the kit's 552-line bash copy used to be, with the checks unchanged. The worked example,
+including what the conversion could not express and what it costs, is the next section but one:
+"Converting a repo".
 
 ## Build and test
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j
-ctest --test-dir build --output-on-failure    # 52 tests
+ctest --test-dir build --output-on-failure    # 53 tests
 ./build/kit-ci --help
+
+cmake --install build --prefix ~/.local       # -> ~/.local/bin/kit-ci, once per machine
 ```
 
 `cmake -DKITCI_BUILD_FUZZ=ON` (clang) builds the libFuzzer target instead of the object
@@ -274,6 +279,85 @@ config using every documented key, and five deliberate rejections (unknown key, 
 string, unterminated array, a duplicate table, bad values). The campaign does not only parse:
 every accepted input is also rendered in all three graph formats, and a format that crashed,
 returned nothing, or emitted an absolute URL is a finding (SPEC.md §5).
+
+## Converting a repo (the worked example: docsum)
+
+Stage D (SPEC.md §9) converted one fleet member. `docsum`'s gate was a 552-line copy of the kit's
+python template; it is now a policy file, a wrapper and four small scripts. Everything in this
+section is measured on the converted repo rather than sketched.
+
+`docsum/gate.toml` — the whole policy:
+
+```toml
+[gate]
+repo = "docsum"
+
+[tier.fast]
+stages = ["lint", "format", "tests", "types", "identity"]
+
+[tier.full]
+stages = ["*"]
+
+[stage.lint]
+cmd = "scripts/py-tool.sh ruff check ."
+
+[stage.format]
+cmd = "scripts/format-changed.sh"           # the branch's touched .py files, not the whole tree
+
+[stage.tests]
+cmd = "scripts/py-tool.sh pytest -q -p no:cacheprovider"
+fail_on = "exit:5"                           # pytest collects no tests -> a failure
+
+[stage.types]
+cmd = "scripts/py-tool.sh mypy ."
+
+[stage.cleanenv]
+cmd = "scripts/clean-env.sh"                 # throwaway venv + requirements.txt + the suite there
+timeout = 600
+
+[stage.identity]
+cmd = "scripts/identity.sh"                  # VERSION == docsum.__version__
+```
+
+`docsum/scripts/gate.sh` — the wrapper all three callers run: it `cd`s to the repo root, refuses
+to run when `kit-ci` is not on PATH (a gate that cannot find its engine must not read as green),
+and execs `kit-ci --tier "${GATE_TIER:-full}"`. The two hooks name their tier: `--tier fast` on
+commit (5 stages — no throwaway venv is built at commit time), `--tier full` on push.
+
+```
+$ kit-ci --list                                  # from the converted repo
+stages: lint format tests types cleanenv identity
+tier fast: lint format tests types identity
+tier full: lint format tests types cleanenv identity
+
+$ scripts/gate.sh                                # the full tier, 10 s warm
+GATE PASSED — 6 passed, 0 failed, 0 skipped
+
+$ git clone . /tmp/x && (cd /tmp/x && scripts/gate.sh)     # the nightly pattern
+GATE PASSED — 6 passed, 0 failed, 0 skipped
+```
+
+Four things a reader converting the next repo should take away, all of them measured:
+
+1. **The engine is installed, not committed**: `cmake --install build --prefix ~/.local`. A
+   converted repo carries policy only; the price is that a machine without `kit-ci` cannot run the
+   gate at all (the wrapper says so and exits 1 — the old bash copy needed only python3 and uv).
+2. **Anything needing more than one command is a script, and the vocabulary stays frozen.** Three
+   of docsum's six stages call a repo-owned script: a tool ladder (`.venv/bin/<tool>` → PATH →
+   `uv run --with`), the touched-file list, and the identity pair. `cmd` is any shell string; that
+   escape hatch was enough.
+3. **`--changed` is not the touched-files logic.** `--changed` scopes a `files` glob and only ever
+   *skips*; a stage that needs the file list as *arguments* keeps its own list. On a fresh clone —
+   level with `origin/main`, i.e. exactly the nightly job — `--changed` resolves to an empty diff
+   and would skip the very stages that job exists to run.
+4. **Tiers are what the hooks name.** The old gate's `GATE_TIER=fast` line ("creating and
+   populating a venv is push-time work") is now `[tier.fast]`, and each hook names the tier
+   instead of repeating any stage list.
+
+What the conversion did **not** carry over — the tools table, `STRICT_TOOLS=1`, the `kit probes`
+step, the identity check's venv interpreter, and the `(last commit, …)` note on the verdict — is
+recorded in `QUESTIONS.md` Q24–Q28 (with the reason and the cost of each) rather than left for a
+reader to discover.
 
 ## Layout
 

@@ -21,6 +21,12 @@ target_include_directories(kitci PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 add_executable(kit-ci src/main.cpp)
 target_link_libraries(kit-ci PRIVATE kitci)
 
+# One install, then every repo on the machine runs the same engine:
+#   cmake --install build --prefix ~/.local     ->  ~/.local/bin/kit-ci
+# A converted repo carries only its policy (gate.toml) and a few lines of wrapper;
+# the engine is installed once per machine rather than committed (Stage D, SPEC.md §9).
+install(TARGETS kit-ci RUNTIME DESTINATION bin)
+
 if(KITCI_BUILD_TESTS)
     enable_testing()
     find_package(GTest REQUIRED)

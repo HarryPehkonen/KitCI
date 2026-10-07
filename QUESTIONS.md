@@ -262,3 +262,97 @@ copy of node when the machine has none). Similarly, `when = "tool:X"` is credite
 pre-commit's language/adapters idea and `--changed` as its changed-file scoping.
 **Question:** is the checked framing wanted, or should the positioning keep the sharper
 phrasing even where pre-commit's documentation does not support it?
+
+## Q24 — Where does the engine live for a converted repo?
+
+§9 says "`gate.toml` + a 3-line hook wrapper" and never says where `kit-ci` comes from. Three
+readings were possible: commit the binary into each repo (3 MB of platform-specific ELF in a
+Python repo, and the policy file stops being the only visible diff), vendor the KitCI source and
+build it in the wrapper (a compiler and a network on every machine that runs the gate), or
+install it once per machine.
+
+**Reading taken:** installed once per machine, from a new `install(TARGETS kit-ci RUNTIME
+DESTINATION bin)` rule in KitCI's `CMakeLists.txt`:
+
+    cmake -S . -B build && cmake --build build
+    cmake --install build --prefix ~/.local        # -> ~/.local/bin/kit-ci
+
+The converted repo's wrapper then execs `kit-ci`, and refuses to run at all when it is not on
+PATH — measured on a fresh clone with `env PATH=/usr/bin:/bin`: `gate: kit-ci is not installed
+...`, exit 1 (the old 552-line bash gate needed only python3 and uv). The engine stays out of the
+repo because the whole claim of §1 is that the policy is the diff: a converted repo carries
+`gate.toml` and a wrapper, and one KitCI upgrade on the machine moves every repo at once.
+**Question:** is a machine-level install acceptable for the fleet (it is what makes the nightly
+clone work with no checkout of KitCI), or should `scripts/gate.sh` fall back to building a
+pinned KitCI commit when `kit-ci` is absent — one compiler away, but self-contained?
+
+## Q25 — §9 calls docsum "the smallest `scripts/gate.sh` fleet member". It is the largest.
+
+Measured on 2026-10-06: `docsum/scripts/gate.sh` 552 lines, `TNGPlaylists/scripts/gate.sh` 282,
+`Notes/scripts/gate.sh` 163. The conversion was done on docsum anyway, because §9 and the card
+both name it — but the parenthetical reason does not survive the measurement, and it matters
+because the size of a repo's gate is exactly what decides how much of it a frozen vocabulary can
+hold: 552 lines of it are the kit's python gate's packaged/unpackaged split, its tool ladder and
+its clean-venv story, none of which the config language has a keyword for.
+**Question:** if "smallest" was the real intent, should the next fleet member converted be
+`Notes` (163 lines, and already the repo with a nightly clean-checkout watcher), so the worked
+example shows a conversion that is nearly all `gate.toml`?
+
+## Q26 — Is `--changed` a replacement for the kit's touched-files logic?
+
+The kit's python gate kept a file list of its own — the branch diff against `origin/main`, plus
+the working tree, plus untracked files, falling back to the last commit's files when the
+checkout is level with `origin/main`, and to the index when there is no commit yet — and used it
+to *build the argument list* of `ruff format --check`. `kit-ci --changed` is a different tool: it
+scopes a stage's `files` glob and only ever **skips** a stage.
+
+**Reading taken:** they are not interchangeable, and the difference is load-bearing on the
+nightly clone. A fresh clone sits level with `origin/main`, so `--changed` resolves to an empty
+diff and every globbed stage would be skipped — the formatter would be skipped precisely where
+the nightly job exists to run it. So the list stayed in the repo: `[stage.format] cmd =
+"scripts/format-changed.sh"` (`files = "*.py"` was deliberately NOT added, because under
+`--changed` it would turn "check the touched files" into "check nothing"). The measured reason
+the logic must stay at all: `ruff format --check .` fails on this tree — 10 of 25 `.py` files
+would be reformatted — so a whole-tree stage would make every commit red for debt nobody in that
+commit wrote.
+**Question:** should kit-ci pass the changed set to a stage (e.g. `$KIT_CI_FILES`, one word in the
+shell string), or is "anything that needs a file list is a script, and the vocabulary stays
+frozen" the intended answer?
+
+## Q27 — Who guarantees a stage runs in the repo root, and who chooses the tier?
+
+Q16 recorded that kit-ci does not `chdir`: a stage runs where kit-ci was invoked. A `gate.toml`
+means nothing if `cmd = "scripts/py-tool.sh ruff check ."` resolves from the wrong directory.
+
+**Reading taken:** the wrapper owns it. `scripts/gate.sh` cd's to its own parent's parent (the
+repo root) before exec'ing `kit-ci`, and it is the documented entry point for all three callers.
+Tier selection: the two hooks name their tier explicitly (`--tier fast` on commit, `--tier full`
+on push) so the hook cannot drift from the stage list, and the wrapper still honours `GATE_TIER`
+(the variable the old gate took) with a default of `full`, so a nightly job that already sets it
+keeps working. `scripts/gate.sh` with no arguments runs the full tier.
+**Question:** should kit-ci itself `chdir` to the directory holding the `--gate` file (Q16 left
+this open — this is the first repo where the answer has consequences), and should `GATE_TIER`
+survive at all now that a tier is named at the call site?
+
+## Q28 — What the conversion is NOT a line-for-line replacement
+
+The conversion kept every check, but five things the 552-line script did are not reproduced, and
+each is recorded here rather than quietly dropped. (1) The `tools` stage — the table naming, for
+each tool, which rung of the ladder answered and where from — is gone; kit-ci prints the stages
+and its own skips, so a run no longer says that ruff came from `uv run --with` because this repo
+pins no tools. (2) `STRICT_TOOLS=1` (a missing tool FAILS instead of skipping) has no equivalent:
+`py-tool.sh`'s last rung always fails loudly, so a missing tool is now always a failure rather
+than a configurable skip — the safer default, but not the same switch. (3) The gate's `kit probes`
+step is gone, and cannot come back: it was a stage INSIDE the kit's python gate, and a repo whose
+policy is a `gate.toml` has no kit revision to hold itself to (docsum never carried a probe; the
+record in `.ai-dev-starter.json` now says so). (4) `identity` no longer asks the throwaway venv's
+interpreter in the full tier — it always asks `python3` with `PYTHONPATH=.`, i.e. the tree; the
+old full-tier version asked the same tree through a venv, and both compare the same pair. (5) The
+old verdict could carry `(last commit, since this checkout is level with origin/main)`; kit-ci's
+verdict line is its own one-liner, so that note now appears in the `format` stage's output
+instead. Also worth recording: the two `scripts/py-tool.sh`/`format-changed.sh` scripts still pass
+`NO_COLOR`, `UV_NO_PROGRESS` and `PYTHONDONTWRITEBYTECODE` themselves, because the engine does not
+set a stage's environment.
+**Question:** is that ledger the right level of fidelity for v1, or is any one of the five worth
+carrying back into the engine as a keyword (the tools table and a `strict` switch are the two that
+look like they could be)?
