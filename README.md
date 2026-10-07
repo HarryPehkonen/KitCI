@@ -197,7 +197,8 @@ order, a legend, and a detail panel under the diagram naming only the stages tha
 the defaults. It contains no absolute URL at all — not even an SVG namespace, which an
 inline `<svg>` in an HTML5 document does not need — and no JavaScript.
 
-`--ast` prints the same parse as data (abridged here to the parts that change with the config):
+`--ast` prints the same parse as data. Abridged below — the real document is 66 lines, and also
+carries the `full` tier and the other three stages:
 
 ```json
 {
