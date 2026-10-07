@@ -67,6 +67,10 @@ Stage attributes: `cmd` (a shell string — the escape hatch), `tier`, `fail_on`
 (`tool:<name>` — a clean skip when the tool is missing) and `summary` (how much failed output
 is shown).
 
+Adding one is meant to cost a minute. `docs/FOR-AGENTS.md` has the measured version of that claim
+— a cold agent, denied every `*.md` file, added a stage from `gate.toml` and the binary alone —
+and the same exercise for you to run by hand.
+
 ## 5. Exit codes
 
 `0` every stage passed · `1` a stage failed, and the verdict names each culprit · `2` nothing

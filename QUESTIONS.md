@@ -5,7 +5,8 @@ take the simplest reading rather than guessing elaborately." These are the readi
 while building KitCI, each with the question it answers: **Q1–Q8** in stage A (the parser and
 the gate), **Q9–Q16** in stage B (the runner), **Q17–Q23** in stage C (the graphs and the
 README positioning), **Q24–Q29** in stage D (the docsum conversion and the fleet notes),
-**Q31–Q33** in v1.1 (the canonical AST, the graph annotations, and the grammar appendix).
+**Q31–Q33** in v1.1 (the canonical AST, the graph annotations, and the grammar appendix), and
+**Q34** in the docs card of 2026-10-07 (what `docs/FOR-AGENTS.md` may claim, and how).
 **Q30 is not a reading** — it is a spec-owner ruling, and it is the one entry that changes the
 frozen vocabulary.
 
@@ -489,3 +490,28 @@ annotated nowhere in any format, and all three formats are golden-tested byte-st
 annotations present.
 **Question:** is `summary` right to be annotated (it changes no stage's outcome, only how much
 failure output is shown), or should the annotation list stay at the four the card named?
+
+## Q34 — What may `docs/FOR-AGENTS.md` claim about an agent reading this repo?
+
+The card asked for a page recording agent-discoverability as a design property, with the live
+experiment as its evidence: a subagent with zero context, denied every `*.md` file and the web,
+added a `filesize` stage to a converted repo's gate in 64.6 s and twelve tool calls, and the
+result was verified independently (fast tier 4/4 green; a staged 3 MB file failed with the bytes
+named; `--list` showed the stage in both tiers). Two things the card left open: how strong the
+claim may be, and whether one verified experiment is evidence or an anecdote.
+
+**Reading taken:** the claim is written as **agent-sufficient on the demonstrated surface** — add
+a stage to an existing, commented gate, cold, without reading prose — and the page states its own
+limits rather than leaving them for a hostile reader: one task, one model, one repo family; the
+untouched edges (`when`, `files` with `--changed`, `strict`, the error contract, a repo with no
+gate at all); the two hints it was given (`gate.toml`, `kit-ci`); and the inverse test nobody has
+run, a config whose comments are absent. Its three "why it works" properties are described as
+things a *repo author* controls in `gate.toml` — the comments as the manual, the binary's
+`--help`/`--list`/`--ast` as answers that cannot go stale, the small vocabulary — not as engine
+features, because only the author of a gate can supply the first and the third. The doc's
+commands were run by hand in a scratch clone of Permuto before they were written down, which is
+how this repo's other docs were written too.
+**Question:** is one verified experiment enough for a page in this repo to use the word
+"measured", or should it read as a single case study until a second task — a different edge, or a
+config with no comments — has been run? The card asked for the evidence to be cited without
+softening; the limits paragraph is what "without softening" turned out to mean.

@@ -7,7 +7,9 @@ the only thing that varies is each repo's `gate.toml`.
 
 `SPEC.md` is the frozen contract. This README says how to build and run what exists today.
 **Starting from zero, in a repo that has no gate yet? `docs/GETTING-STARTED.md` is the
-five-minute version** — install the engine once, arm the hooks once, then just work.
+five-minute version** — install the engine once, arm the hooks once, then just work. **How little
+does it take to add a stage to a gate that already exists? `docs/FOR-AGENTS.md`** — a measured
+experiment (a cold agent, no docs, one minute), and the same exercise by hand.
 
 ## Why not `pre-commit`?
 
@@ -440,6 +442,8 @@ fuzz/fuzz_gate_toml.cpp    the libFuzzer entry point (parser + graphs + AST)
 fuzz/corpus/               the checked-in starting corpus
 tools/ci.sh                the gate
 .githooks/                 pre-commit (fast tier), pre-push (full tier)
+docs/GETTING-STARTED.md    adopting the gate in a repo that has none
+docs/FOR-AGENTS.md         the cold-agent measurement, and the same exercise by hand
 ```
 
 ## License
