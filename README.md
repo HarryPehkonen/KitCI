@@ -6,6 +6,8 @@ and prints one unmistakable verdict line. The same binary serves C++, Python and
 the only thing that varies is each repo's `gate.toml`.
 
 `SPEC.md` is the frozen contract. This README says how to build and run what exists today.
+**Starting from zero, in a repo that has no gate yet? `docs/GETTING-STARTED.md` is the
+five-minute version** — install the engine once, arm the hooks once, then just work.
 
 ## Why not `pre-commit`?
 
@@ -85,10 +87,14 @@ including what the conversion could not express and what it costs, is the next s
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j
-ctest --test-dir build --output-on-failure    # 53 tests
+ctest --test-dir build --output-on-failure    # the whole suite
 ./build/kit-ci --help
 
-cmake --install build --prefix ~/.local       # -> ~/.local/bin/kit-ci, once per machine
+# the one-time machine install: Release, in its own build dir — this is the engine
+# every gate on the machine runs, and a Debug build is 8.6x its size for nothing
+cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
+cmake --build build-release -j
+cmake --install build-release --prefix ~/.local   # -> ~/.local/bin/kit-ci
 ```
 
 `cmake -DKITCI_BUILD_FUZZ=ON` (clang) builds the libFuzzer target instead of the object
@@ -342,7 +348,8 @@ GATE PASSED — 6 passed, 0 failed, 0 skipped
 
 Four things a reader converting the next repo should take away, all of them measured:
 
-1. **The engine is installed, not committed**: `cmake --install build --prefix ~/.local`. A
+1. **The engine is installed, not committed**: `cmake --install build-release --prefix ~/.local`
+   (the Release recipe under "Build and test", and `docs/GETTING-STARTED.md` §1). A
    converted repo carries policy only; the price is that a machine without `kit-ci` cannot run the
    gate at all (the wrapper says so and exits 1 — the old bash copy needed only python3 and uv).
 2. **Anything needing more than one command is a script, and the vocabulary stays frozen.** Three
