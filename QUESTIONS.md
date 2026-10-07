@@ -4,7 +4,9 @@ SPEC.md §0: "If something is genuinely ambiguous, write the question into `QUES
 take the simplest reading rather than guessing elaborately." These are the readings taken
 while building KitCI, each with the question it answers: **Q1–Q8** in stage A (the parser and
 the gate), **Q9–Q16** in stage B (the runner), **Q17–Q23** in stage C (the graphs and the
-README positioning). None of them changes the frozen vocabulary.
+README positioning), **Q24–Q29** in stage D (the docsum conversion and the fleet notes).
+**Q30 is not a reading** — it is a spec-owner ruling, and it is the one entry that changes the
+frozen vocabulary.
 
 ## Q1 — Is the stage set exactly the five in §6, or the kit's gate plus those five?
 
@@ -386,3 +388,34 @@ asks them not to.
 **Question:** keep the byte-level invariant for all three formats (dot's `// repo:` and Mermaid's
 `%% repo:` would then need their own escape), or move the check to fetching positions in the HTML
 and let the raw text through everywhere?
+
+## Q30 — Is an empty `cmd` a config fault? (the one SPEC-OWNER RULING)
+
+Q8 and Q10 left this to the run: the parser accepted `cmd = ""` and `--strict` made the RUNNER
+fail that stage, on the grounds that a stage which can never fail is the runner's business and
+not the parser's.
+
+The spec owner ruled otherwise on 2026-10-06 (card `t_6989cec2`, the fleet conversion's
+pre-step), and the reason is `--list` and `--graph`: they read the same parse a run uses, so a
+config that cannot honestly run a stage should not parse at all. **Ruling, implemented:** an
+empty — or whitespace-only — `cmd` is a config fault reported on the `cmd` key's own line,
+unless `[gate]` sets `strict = false`, which is the config saying the no-op is deliberate. That
+key (`[gate] strict`, default `true`) and the bare boolean it takes are the only vocabulary
+additions v1 has ever accepted, and they were accepted by ruling rather than chosen by a worker.
+
+Test first, watched red for the right reason, both new tests in `tests/parser_test.cpp`:
+`ParserTest.RejectsEmptyCmd` failed because the old parser ACCEPTED the config, and
+`ParserTest.StrictFalsePermitsEmptyCmd` failed with `unknown key 'strict' in [gate] (line 2)`.
+Both green after. The RUN-time rule is untouched: `RunnerTest.StrictFailsAStageWithAnEmptyCmd`
+still fails the stage under the default `RunOptions.strict` — its fixture now declares
+`strict = false` so that a Config holding an empty `cmd` can exist to be run at all, and its
+assertions are unchanged.
+
+**The layering, stated so nobody reads either half as dead weight:** the config key governs the
+PARSE; the flag governs the RUN. A repo that wants a deliberate no-op stage sets
+`[gate] strict = false` and still needs `--no-strict` to run it, because `--strict` is the
+default. Two controls, two questions — is this config honest, and what did this run declare —
+but if that reads as two switches for one decision, collapsing them (the key becoming the run's
+default strictness) is a spec owner's call, not a worker's.
+**Question:** is that layering what was ruled, or should `[gate] strict = false` also become the
+run's default strictness, so the key alone is enough?

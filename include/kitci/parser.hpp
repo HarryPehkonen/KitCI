@@ -38,6 +38,10 @@ struct Config {
     std::map<std::string, Stage> stages;
     std::vector<std::string> tier_order;  // declaration order
     std::map<std::string, Tier> tiers;
+    // `[gate] strict` (default true). False permits a stage whose `cmd` is empty at parse
+    // time; with it true such a stage is a config fault. The run's own strictness is a
+    // separate control (RunOptions.strict, the --strict/--no-strict flags).
+    bool strict = true;
 };
 
 struct ParseError {

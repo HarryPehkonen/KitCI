@@ -234,3 +234,32 @@ stages = ["lint"]
     EXPECT_EQ(ErrorLine(result), 6);
     EXPECT_NE(ErrorMessage(result).find("(line 6)"), std::string::npos) << ErrorMessage(result);
 }
+
+// The one unimplemented spec-owner ruling (2026-10-06, card t_6989cec2): a stage whose `cmd` is
+// present but EMPTY is refused at PARSE time, because a config that cannot run a stage is a
+// config that should not parse -- `--list` and `--graph` read the same parse a run does.
+TEST(ParserTest, RejectsEmptyCmd) {
+    const kitci::ParseResult result = Parse(R"toml([stage.lint]
+cmd = ""
+)toml");
+    ASSERT_FALSE(result.ok);
+    EXPECT_EQ(ErrorLine(result), 2);
+    EXPECT_NE(ErrorMessage(result).find("cmd"), std::string::npos) << ErrorMessage(result);
+    EXPECT_NE(ErrorMessage(result).find("(line 2)"), std::string::npos) << ErrorMessage(result);
+}
+
+// ...unless the config itself says it is not strict: `[gate] strict = false` is the escape
+// hatch for a stage that is deliberately a no-op, and it is the only reader of the key.
+TEST(ParserTest, StrictFalsePermitsEmptyCmd) {
+    const kitci::ParseResult result = Parse(R"toml([gate]
+strict = false
+
+[stage.noop]
+cmd = ""
+)toml");
+    ASSERT_TRUE(result.ok) << ErrorMessage(result);
+    EXPECT_FALSE(result.config.strict);
+    const auto it = result.config.stages.find("noop");
+    ASSERT_NE(it, result.config.stages.end());
+    EXPECT_TRUE(it->second.cmd.empty());
+}

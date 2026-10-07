@@ -151,12 +151,13 @@ bool FailOnOk(const std::string& value) {
 // ------------------------------------------------------------------ value model
 
 struct Value {
-    enum class Kind : std::uint8_t { String, StringArray, Integer };
+    enum class Kind : std::uint8_t { String, StringArray, Integer, Boolean };
 
     Kind kind = Kind::String;
     std::string text;                // String
     std::vector<std::string> items;  // StringArray
     long integer = 0;                // Integer
+    bool boolean = false;            // Boolean
 };
 
 struct Entry {
@@ -179,7 +180,7 @@ struct Fault {
 
 bool KeyAllowed(const std::string& kind, const std::string& key) {
     if (kind == "gate") {
-        return key == "repo";
+        return key == "repo" || key == "strict";
     }
     if (kind == "tier") {
         return key == "stages";
@@ -211,6 +212,7 @@ public:
         }
 
         Config config;
+        CollectGate(&config);
         CollectStages(&config);
         CollectTiers(&config);
         CheckStageTiers(&config);
@@ -357,10 +359,25 @@ private:
             value->items = items;
             return true;
         }
+        // The one boolean in the vocabulary: `[gate] strict = false`. Bare, unquoted, exactly
+        // like TOML writes it -- and the trailing-character check in the caller is what
+        // refuses `truely` (it reports the junk rather than reading a prefix).
+        if (text.compare(pos, 4, "true") == 0) {
+            value->kind = Value::Kind::Boolean;
+            value->boolean = true;
+            *end = pos + 4;
+            return true;
+        }
+        if (text.compare(pos, 5, "false") == 0) {
+            value->kind = Value::Kind::Boolean;
+            value->boolean = false;
+            *end = pos + 5;
+            return true;
+        }
         if (c == '-' || (c >= '0' && c <= '9')) {
             return ParseInteger(text, pos, line, value, end);
         }
-        FaultAt(line, "expected a string, an array or an integer");
+        FaultAt(line, "expected a string, an array, an integer or true/false");
         return false;
     }
 
@@ -481,6 +498,10 @@ private:
         if (key == "fail_on" && !FailOnOk(value.text)) {
             FaultAt(line, "fail_on must be 'nonzero', 'output:<regex>' or 'exit:<n>' in [" +
                               table.header + "]");
+            return;
+        }
+        if (key == "strict" && value.kind != Value::Kind::Boolean) {
+            FaultAt(line, "expected true or false for 'strict' in [" + table.header + "]");
         }
     }
 
@@ -489,6 +510,19 @@ private:
     static const Entry* Find(const TableState& table, const std::string& key) {
         const auto it = table.values.find(key);
         return it == table.values.end() ? nullptr : &it->second;
+    }
+
+    // `[gate] strict` is read BEFORE the stages are collected, because it decides whether an
+    // empty `cmd` is a fault (the rule below) rather than whether a stage may run.
+    void CollectGate(Config* config) {
+        for (const TableState& table : tables_) {
+            if (table.kind != "gate") {
+                continue;
+            }
+            if (const Entry* entry = Find(table, "strict")) {
+                config->strict = entry->value.boolean;
+            }
+        }
     }
 
     void CollectStages(Config* config) {
@@ -504,6 +538,17 @@ private:
                 FaultAt(table.line, "stage '" + table.name + "' has no cmd");
             } else {
                 stage.cmd = cmd->value.text;
+                // The spec-owner ruling of 2026-10-06 (QUESTIONS.md Q30): an empty cmd is a
+                // config fault, not a stage that quietly does nothing. The fault is reported
+                // on the `cmd` line, which is the line a reader has to change. `strict = false`
+                // in [gate] is the one way to say the no-op is deliberate; the RUN still
+                // refuses it under the default --strict (runner.cpp, Q10).
+                if (config->strict && Trim(stage.cmd).empty()) {
+                    FaultAt(cmd->line, "stage '" + table.name +
+                                           "' has an empty cmd (a stage that checks nothing is "
+                                           "a gate that lies; set strict = false in [gate] to "
+                                           "permit one)");
+                }
             }
             if (const Entry* entry = Find(table, "tier")) {
                 stage.tier = entry->value.text;

@@ -271,6 +271,13 @@ TEST(RunnerTest, StrictFailsAStageWithAnEmptyCmd) {
     const kitci::Config config = ConfigFrom(R"toml([tier.full]
 stages = ["empty"]
 
+[gate]
+# 2026-10-06, QUESTIONS.md Q30: an empty cmd is reachable in a Config only when the config
+# itself says the no-op is deliberate -- the parser refuses it otherwise
+# (ParserTest.RejectsEmptyCmd). The RUNs own strictness is what this test measures, so the
+# fixture is the permissive config and RunOptions does the rest.
+strict = false
+
 [stage.empty]
 cmd = ""
 )toml");

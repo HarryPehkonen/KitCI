@@ -59,6 +59,8 @@ else with a 1-based line number and a message (total input contract — see §5)
 ```toml
 [gate]
 repo = "name"                 # optional, display only
+strict = false                # optional, default true — false permits an EMPTY cmd
+                              # (spec-owner ruling, 2026-10-06: see §3 rule 2)
 
 [tier.fast]
 stages = ["format", "lint", "tests"]
@@ -81,7 +83,9 @@ summary = "head:40"           # optional — how much of failed output to show;
 
 Rules the config parser enforces (each is an error with a line number):
 1. Unknown key in any table.
-2. A `[stage.X]` table with no `cmd`.
+2. A `[stage.X]` table with no `cmd` — or with an EMPTY one, unless `[gate]` sets
+   `strict = false` (a stage that checks nothing is a gate that lies; the fault is reported on
+   the `cmd` line).
 3. `stages` naming a stage that is not declared.
 4. A `tier` value naming a tier that has no `[tier.X]` table.
 5. `fail_on` not one of the allowed values (§4).
@@ -95,6 +99,10 @@ Rules the config parser enforces (each is an error with a line number):
 The vocabulary is deliberately frozen: if the bash gates do not express it, KitCI has
 no keyword for it. Escape hatch for anything exotic: put it in `cmd` — a stage whose
 `cmd` is any shell string. No new config language feature may be added in v1.
+Two things were added by a SPEC-OWNER ruling rather than by a worker, and both are recorded in
+`QUESTIONS.md` Q30: `[gate] strict = false` (the one key that lets a config declare an empty
+`cmd` deliberate instead of a fault), and the boolean literal that key takes — exactly `true`
+and `false`, unquoted, and nowhere else in the vocabulary.
 
 ## 4. Stage semantics (frozen)
 
