@@ -1,0 +1,8 @@
+[tier.full]
+stages = ["bad", "worse"]
+
+[stage.bad]
+cmd = "echo kitci-command-marker; exit 3"
+
+[stage.worse]
+cmd = "exit 4"

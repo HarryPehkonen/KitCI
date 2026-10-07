@@ -15,7 +15,7 @@ if(KITCI_BUILD_FUZZ)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address,undefined")
 endif()
 
-add_library(kitci STATIC src/parser.cpp)
+add_library(kitci STATIC src/parser.cpp src/runner.cpp)
 target_include_directories(kitci PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 add_executable(kit-ci src/main.cpp)
@@ -24,7 +24,7 @@ target_link_libraries(kit-ci PRIVATE kitci)
 if(KITCI_BUILD_TESTS)
     enable_testing()
     find_package(GTest REQUIRED)
-    add_executable(kitci_tests tests/parser_test.cpp tests/cli_test.cpp)
+    add_executable(kitci_tests tests/parser_test.cpp tests/runner_test.cpp tests/cli_test.cpp)
     target_link_libraries(kitci_tests PRIVATE kitci GTest::gtest GTest::gtest_main)
     target_compile_definitions(kitci_tests PRIVATE
         KITCI_BINARY="$<TARGET_FILE:kit-ci>"

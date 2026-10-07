@@ -4,6 +4,8 @@
 #include <array>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -14,15 +16,21 @@ namespace {
 constexpr const char* kBinary = KITCI_BINARY;
 constexpr const char* kFixtures = KITCI_FIXTURES;
 
+// git needs an identity to commit, and a developer's ~/.gitconfig must not decide whether
+// this test can run.
+constexpr const char* kGitIdentity =
+    "-c user.email=kit-ci@example.invalid -c user.name=kit-ci -c commit.gpgsign=false";
+
 struct CommandResult {
     int exit_code = -1;
     std::string output;
 };
 
-// Shell out to the real binary: --list is a command-line contract, and a test that called
-// the library instead would not notice argv handling, stdout or the exit code.
-CommandResult RunCommand(const std::string& arguments) {
-    const std::string command = "\"" + std::string(kBinary) + "\" " + arguments + " 2>&1";
+// Shell out to the real binary: the command line, stdout and the exit code are contracts,
+// and a test that called the library instead would not notice any of them.
+CommandResult RunCommandIn(const std::string& working_dir, const std::string& arguments) {
+    const std::string command =
+        "cd \"" + working_dir + "\" && \"" + std::string(kBinary) + "\" " + arguments + " 2>&1";
     CommandResult result;
     std::array<char, 4096> buffer{};
     FILE* pipe = ::popen(command.c_str(), "r");
@@ -36,6 +44,42 @@ CommandResult RunCommand(const std::string& arguments) {
     const int status = ::pclose(pipe);
     result.exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
     return result;
+}
+
+CommandResult RunCommand(const std::string& arguments) {
+    return RunCommandIn(".", arguments);
+}
+
+// A scratch directory; the caller removes it.
+std::string MakeTempDir(const std::string& label) {
+    std::string pattern = (std::filesystem::temp_directory_path() / (label + "XXXXXX")).string();
+    std::vector<char> buffer(pattern.begin(), pattern.end());
+    buffer.push_back('\0');
+    char* made = ::mkdtemp(buffer.data());
+    return made == nullptr ? std::string() : std::string(made);
+}
+
+bool WriteFile(const std::string& path, const std::string& text) {
+    const std::filesystem::path target(path);
+    std::error_code error;
+    std::filesystem::create_directories(target.parent_path(), error);
+    std::ofstream out(target, std::ios::binary | std::ios::trunc);
+    if (!out) {
+        return false;
+    }
+    out << text;
+    return out.good();
+}
+
+// Run a shell command inside a directory; the exit code, or -1 when it could not run.
+int RunShellInDir(const std::string& dir, const std::string& command) {
+    const std::string full = "cd \"" + dir + "\" && " + command + " >/dev/null 2>&1";
+    FILE* pipe = ::popen(full.c_str(), "r");
+    if (pipe == nullptr) {
+        return -1;
+    }
+    const int status = ::pclose(pipe);
+    return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 }
 
 std::vector<std::string> SplitWords(const std::string& text) {
@@ -109,4 +153,103 @@ TEST(CliTest, ListOnInvalidConfigExitsTwo) {
         RunCommand(std::string("--gate ") + kFixtures + "/invalid.toml --list");
     EXPECT_EQ(result.exit_code, 2) << result.output;
     EXPECT_NE(result.output.find("colur"), std::string::npos) << result.output;
+}
+
+TEST(CliTest, RunPassesExitsZero) {
+    const CommandResult result = RunCommand(std::string("--gate ") + kFixtures + "/run_pass.toml");
+    EXPECT_EQ(result.exit_code, 0) << result.output;
+    EXPECT_NE(result.output.find("GATE PASSED"), std::string::npos) << result.output;
+}
+
+TEST(CliTest, RunFailureExitsOneAndNamesTheCulprits) {
+    const CommandResult result = RunCommand(std::string("--gate ") + kFixtures + "/run_fail.toml");
+    EXPECT_EQ(result.exit_code, 1) << result.output;
+    EXPECT_NE(result.output.find("GATE FAILED"), std::string::npos) << result.output;
+    EXPECT_NE(result.output.find("bad"), std::string::npos) << result.output;
+    EXPECT_NE(result.output.find("worse"), std::string::npos) << result.output;
+    // SPEC.md §4: a failed stage prints its whole command so the human can re-run it.
+    EXPECT_NE(result.output.find("echo kitci-command-marker; exit 3"), std::string::npos)
+        << result.output;
+}
+
+TEST(CliTest, ZeroStagesExitsTwo) {
+    const CommandResult result =
+        RunCommand(std::string("--gate ") + kFixtures + "/zero_stages.toml");
+    EXPECT_EQ(result.exit_code, 2) << result.output;
+    // Exit 2 must mean "nothing was checked", not "the run is unimplemented": the answer
+    // names the tier that resolved to no stages.
+    EXPECT_NE(result.output.find("no stages"), std::string::npos) << result.output;
+    EXPECT_NE(result.output.find("full"), std::string::npos) << result.output;
+    // A gate that checks nothing is a gate that lies: it must not read as green.
+    EXPECT_EQ(result.output.find("GATE PASSED"), std::string::npos) << result.output;
+}
+
+TEST(CliTest, TierSelectsTheStageSet) {
+    const std::string gate = std::string("--gate ") + kFixtures + "/run_tiers.toml";
+    const CommandResult fast = RunCommand(gate + " --tier fast");
+    EXPECT_EQ(fast.exit_code, 0) << fast.output;
+    EXPECT_NE(fast.output.find("GATE PASSED"), std::string::npos) << fast.output;
+    EXPECT_EQ(fast.output.find("slow"), std::string::npos) << fast.output;
+
+    const CommandResult full = RunCommand(gate + " --tier full");
+    EXPECT_EQ(full.exit_code, 1) << full.output;
+    EXPECT_NE(full.output.find("slow"), std::string::npos) << full.output;
+
+    // A tier that is not declared is a config error, not an empty run that passes.
+    const CommandResult missing = RunCommand(gate + " --tier nope");
+    EXPECT_EQ(missing.exit_code, 2) << missing.output;
+}
+
+TEST(CliTest, ChangedScopesAgainstGitMain) {
+    const std::string dir = MakeTempDir("kitci-changed-");
+    ASSERT_FALSE(dir.empty());
+    ASSERT_TRUE(WriteFile(dir + "/gate.toml", R"toml([tier.full]
+stages = ["py"]
+
+[stage.py]
+cmd = "exit 1"
+files = "*.py"
+)toml"));
+    ASSERT_TRUE(WriteFile(dir + "/notes.md", "notes\n"));
+    ASSERT_TRUE(WriteFile(dir + "/src/module.py", "x = 1\n"));
+    ASSERT_EQ(RunShellInDir(dir, "git init -q -b main ."), 0);
+    ASSERT_EQ(RunShellInDir(dir, "git add -A"), 0);
+    ASSERT_EQ(RunShellInDir(dir, std::string("git ") + kGitIdentity + " commit -q -m initial"), 0);
+
+    // Only a file the glob does not name changed: the stage is skipped, and the run passes.
+    ASSERT_TRUE(WriteFile(dir + "/notes.md", "notes, changed\n"));
+    const CommandResult skipped = RunCommandIn(dir, "--changed --gate gate.toml");
+    EXPECT_EQ(skipped.exit_code, 0) << skipped.output;
+    EXPECT_NE(skipped.output.find("GATE PASSED"), std::string::npos) << skipped.output;
+
+    // A file the glob names changed: the stage runs and its failure is the run's.
+    ASSERT_TRUE(WriteFile(dir + "/src/module.py", "x = 2\n"));
+    const CommandResult ran = RunCommandIn(dir, "--changed --gate gate.toml");
+    EXPECT_EQ(ran.exit_code, 1) << ran.output;
+    EXPECT_NE(ran.output.find("GATE FAILED"), std::string::npos) << ran.output;
+
+    std::error_code error;
+    std::filesystem::remove_all(dir, error);
+}
+
+TEST(CliTest, ChangedWithoutGitRunsUnscoped) {
+    const std::string dir = MakeTempDir("kitci-nogit-");
+    ASSERT_FALSE(dir.empty());
+    ASSERT_TRUE(WriteFile(dir + "/gate.toml", R"toml([tier.full]
+stages = ["py"]
+
+[stage.py]
+cmd = "true"
+files = "*.py"
+)toml"));
+    // No repository here: the scoping cannot be answered, so nothing is silently skipped —
+    // every stage runs and the run says why.
+    const CommandResult result = RunCommandIn(dir, "--changed --gate gate.toml");
+    EXPECT_EQ(result.exit_code, 0) << result.output;
+    EXPECT_NE(result.output.find("GATE PASSED"), std::string::npos) << result.output;
+    EXPECT_NE(result.output.find("--changed"), std::string::npos) << result.output;
+    EXPECT_NE(result.output.find("py"), std::string::npos) << result.output;
+
+    std::error_code error;
+    std::filesystem::remove_all(dir, error);
 }

@@ -1,0 +1,8 @@
+[gate]
+repo = "run-pass"
+
+[tier.full]
+stages = ["ok"]
+
+[stage.ok]
+cmd = "true"

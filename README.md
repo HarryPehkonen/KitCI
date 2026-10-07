@@ -9,23 +9,51 @@ the only thing that varies is each repo's `gate.toml`.
 
 ## Status
 
-**Stage A — the parser and `--list`.** `kit-ci` parses `gate.toml` (every documented key,
-every rejection rule, a 1-based line number on every error) and answers `--list`. The runner
-(Stage B) and the graph modes (Stage C) are named in `SPEC.md` §9 and are not implemented
-yet: asking for them exits `2` with a message saying so. That exit code is the honest one —
-`0` would claim a run that did not happen.
+**Stages A and B — the parser and the runner.** `kit-ci` parses `gate.toml` (every documented
+key, every rejection rule, a 1-based line number on every error), answers `--list`, and runs a
+tier: every stage in run order, `fail_on`, `timeout`, the `when` and `--changed`/`files` skips,
+one verdict line and one exit code. The graph modes (Stage C) and the fleet conversion
+(Stage D) are named in `SPEC.md` §9 and are not implemented yet: asking for them exits `2` with
+a message saying so. That exit code is the honest one — `0` would claim a run that did not
+happen.
 
 ## Build and test
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j
-ctest --test-dir build --output-on-failure    # 16 tests
+ctest --test-dir build --output-on-failure    # 36 tests
 ./build/kit-ci --help
 ```
 
 `cmake -DKITCI_BUILD_FUZZ=ON` (clang) builds the libFuzzer target instead of the object
 library; `-DKITCI_BUILD_TESTS=OFF` skips the suite.
+
+## Running the stages
+
+```bash
+./build/kit-ci                    # the default tier: "full" if declared, else the first
+./build/kit-ci --tier fast        # a named tier
+./build/kit-ci --changed          # scope the `files` globs to what changed vs merge-base main
+./build/kit-ci --no-strict        # an empty cmd is a no-op rather than a failure
+```
+
+Exit codes: `0` every stage passed, `1` at least one stage failed, `2` nothing ran — the config
+is unreadable or invalid, or the tier resolved to no stages at all.
+
+**Every stage runs.** A failing stage does not stop the run; one run names every culprit:
+
+```
+GATE FAILED — 1 passed, 2 failed (lint, tests), 0 skipped
+```
+
+A failed stage prints its command and the first `summary` lines of its combined output, so the
+command can be re-run by hand. A stage whose `when` tool is absent, or whose `files` glob
+matches nothing under `--changed`, is **skipped**: not failed, not counted. `--changed` needs a
+merge base with `main`; when git cannot give it one, the run says so and runs every stage
+unscoped rather than skipping silently (QUESTIONS.md Q13). The rest of the readings the runner
+took — the default tier, strictness, glob semantics, what happens to an all-skipped run — are
+Q9–Q16 in `QUESTIONS.md`.
 
 ## The gate
 
@@ -98,9 +126,12 @@ string, unterminated array, a duplicate table, bad values).
 
 ```
 include/kitci/parser.hpp   the parsed-config model and the parser's API
+include/kitci/runner.hpp   the runner's API: RunOptions, StageResult, RunResult
 src/parser.cpp             the TOML-subset parser
+src/runner.cpp             stage execution: fail_on, timeouts, skips, the verdict
 src/main.cpp               the command line
 tests/parser_test.cpp      the frozen parsing tests (SPEC.md §8)
+tests/runner_test.cpp      the frozen runner tests (SPEC.md §8)
 tests/cli_test.cpp         the frozen CLI tests, run against the real binary
 tests/fixtures/            configs the CLI test feeds to the binary
 fuzz/fuzz_gate_toml.cpp    the libFuzzer entry point

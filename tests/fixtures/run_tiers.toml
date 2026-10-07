@@ -1,0 +1,11 @@
+[tier.fast]
+stages = ["quick"]
+
+[tier.full]
+stages = ["quick", "slow"]
+
+[stage.quick]
+cmd = "true"
+
+[stage.slow]
+cmd = "exit 9"
