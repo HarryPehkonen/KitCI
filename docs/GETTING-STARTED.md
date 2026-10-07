@@ -8,7 +8,7 @@ KitCI is two halves, and only one of them is per repo.
   only; the engine is never committed.
 
 Adopting it in a repo means copying in `gate.toml`, `scripts/gate.sh` and `.githooks/` (from a
-converted repo — `docsum`, `Permuto` — or the kit's templates) and editing `gate.toml`.
+converted repo — `docsum`, `Permuto` — or the kit's `examples/`) and editing `gate.toml`.
 
 ## 1. Install the engine (once per machine)
 
