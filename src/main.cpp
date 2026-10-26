@@ -117,25 +117,21 @@ void PrintStage(const kitci::StageResult& stage) {
         // The header counts what was FOUND, not what is printed, so a capped block cannot read as
         // complete — the same honesty as `output, first 40 line(s)`. And what the summary already
         // printed is named rather than silently dropped: no block at all, and a block with nothing
-        // in it, would otherwise read the same (QUESTIONS.md Q35's ruling).
+        // in it, would otherwise read the same (QUESTIONS.md Q35's ruling). Two axes, one label,
+        // one printf.
+        std::string label;
         if (diagnostics.lines.empty()) {
-            std::printf("    --- diagnostics, all %zu line(s) already shown above ---\n",
-                        diagnostics.shown_above);
-        } else if (diagnostics.shown_above == 0) {
-            if (diagnostics.found > printed) {
-                std::printf("    --- diagnostics, first %zu of %zu line(s) ---\n", printed,
-                            diagnostics.found);
-            } else {
-                std::printf("    --- diagnostics, %zu line(s) ---\n", printed);
-            }
-        } else if (diagnostics.found > printed) {
-            std::printf(
-                "    --- diagnostics, first %zu of %zu line(s), %zu already shown above ---\n",
-                printed, diagnostics.found, diagnostics.shown_above);
+            label =
+                "all " + std::to_string(diagnostics.shown_above) + " line(s) already shown above";
         } else {
-            std::printf("    --- diagnostics, %zu line(s), %zu already shown above ---\n", printed,
-                        diagnostics.shown_above);
+            label = diagnostics.found > printed ? "first " + std::to_string(printed) + " of " +
+                                                      std::to_string(diagnostics.found) + " line(s)"
+                                                : std::to_string(printed) + " line(s)";
+            if (diagnostics.shown_above > 0) {
+                label += ", " + std::to_string(diagnostics.shown_above) + " already shown above";
+            }
         }
+        std::printf("    --- diagnostics, %s ---\n", label.c_str());
         PrintIndented(joined);
     }
 }

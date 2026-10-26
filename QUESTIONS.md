@@ -602,5 +602,26 @@ would otherwise read the same, and "the block is missing" would be free to mean 
 Test first again, watched red for the right reason — `shown_above` read 0 where 1 and 2 were required,
 and the CLI test's own failure output showed the diagnostic sitting in the summary with no block at
 all. Four header forms, all written into SPEC.md §4.
+
+**The matcher, revised the same day — measured, not styled.** The block shipped matching each line
+with `std::regex`: one `regex_search` per line over the stage's whole output, plus a `std::string`
+built for every line whether it matched or not. On a 2.5 MB failing log (50,001 lines — what a build
+stage leaves when a parallel compile fails) that cost real time in a **Release** build: **490 ms per
+run against 39 ms** for the same verdict, 309 / 24 ms at their minima, five interleaved runs each,
+one gate, its stage cost held to a single `cat` so the delta is the engine's. The regex is now a
+hand-rolled scan over the buffer that allocates only for a line that matched (`LooksLikeDiagnostic`,
+`src/runner.cpp`).
+
+Nothing about the block's output moved, and that was proved rather than assumed. A differential spike
+ran both matchers over a 23,058-line combinatorial corpus (paths × line numbers × columns ×
+severities × tails, plus the awkward cases: an indented match, `12:00:01: error:`, `::12:`, a URL, a
+missing column): 1,844 diagnostics, **0 mismatches**. Then both binaries ran the same corpus gate and
+their output was **identical byte for byte** — with the block firing in both, so the comparison could
+not pass vacuously. Two quirks had to be reproduced exactly, and the first attempt at each was wrong:
+the path is ONE character followed by non-colons (so `::12: error:` is a diagnostic whose path is a
+single colon), and a column is taken only when a digit really follows it, or `a.cpp:12: error:` reads
+as a column of 12 rather than as path-line-severity. In `src/main.cpp` the four-branch header became
+one composed label: the same five strings, one `printf`.
+
 **Question:** none outstanding — the shape is settled, and the one knob left (the cap, a constant in
 the runner) needs no ruling to keep as it is.
