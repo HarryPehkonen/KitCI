@@ -559,8 +559,9 @@ lines the summary block already shows dropped, capped at 20, and printed under t
 The same run, after: 2764 bytes. No new flag (§2 stays frozen), no new `gate.toml` key (§3 stays
 frozen), no exit code moves, and a failure with no diagnostics prints exactly what it printed before.
 The count in the header is what was FOUND, not what is shown, so a capped block cannot read as
-complete. Verified absent when it should be: on the converted repo the clang-format findings the
-script had already tailed into view are correctly NOT repeated.
+complete. On the converted repo the clang-format findings the script had already tailed into view are
+not repeated — and, by the ruling at the end of this entry, they are now counted on the block's
+header line rather than silently disappearing from it.
 
 **Compiler-agnostic by the tools' convention, not by a keyword.** Measured here: gcc 14.2.0,
 clang 19.1.7, `clang-format --dry-run --Werror` and `clang-tidy` all emit that shape.
@@ -582,6 +583,24 @@ passing (the summary really was 40 lines of progress with no `error:` in it):
 
 **One edge ruled on rather than left implicit:** a "path" that is nothing but digits is a clock, not a
 file — `12:00:01: error: …` is not a diagnostic.
-**Question:** is a fixed cap of 20 right (it is a constant in the runner, not a key), and is dropping
-the lines the summary already printed the behaviour you want — or would you rather have the complete
-diagnostic list, duplicates and all?
+
+**Ruling on the block's silence, 2026-10-25.** Two questions went to the spec owner and one was
+withdrawn before he answered it: the cap of 20 stays, because it is a constant in the runner rather
+than a key, the header already says how many were found, and a scoped `tidy` over one change produced
+36–43 findings in the PROTEKT measurement — uncapped, the block becomes the dump it exists to prevent.
+The question that stood was what the block should do about lines the summary above it had already
+printed. **He ruled: *"Keep and say how many were above."*** So such a line is still not repeated —
+the block stays a list of lines the reader has not already been shown — but it is COUNTED, and the
+block prints a header even when it has no line to print:
+
+    --- output, first 40 line(s) ---
+      src/pair.cpp:8:18: error: already inside the summary
+    --- diagnostics, all 1 line(s) already shown above ---
+
+The reason is the one this whole entry is about: an absent header and a header with nothing under it
+would otherwise read the same, and "the block is missing" would be free to mean "nothing was found".
+Test first again, watched red for the right reason — `shown_above` read 0 where 1 and 2 were required,
+and the CLI test's own failure output showed the diagnostic sitting in the summary with no block at
+all. Four header forms, all written into SPEC.md §4.
+**Question:** none outstanding — the shape is settled, and the one knob left (the cap, a constant in
+the runner) needs no ruling to keep as it is.

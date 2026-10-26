@@ -396,4 +396,22 @@ cmd = "i=0; while [ $i -lt 55 ]; do i=$((i+1)); echo \"[ $i%] Building CXX objec
 
     std::error_code error;
     std::filesystem::remove_all(dir, error);
+
+    // The same finding again, but inside the summary this time: the block has no line to print and
+    // must still say what happened, or its absence reads as "no diagnostics were found"
+    // (QUESTIONS.md Q35's ruling).
+    const std::string visible = MakeTempDir("kitci-diag-visible-");
+    ASSERT_FALSE(visible.empty());
+    ASSERT_TRUE(WriteFile(visible + "/gate.toml", R"toml([tier.full]
+stages = ["visible"]
+
+[stage.visible]
+cmd = "echo 'src/pair.cpp:8:18: error: already inside the summary'; exit 1"
+)toml"));
+    const CommandResult shown = RunCommandIn(visible, "--gate gate.toml");
+    EXPECT_EQ(shown.exit_code, 1) << shown.output;
+    EXPECT_NE(shown.output.find("--- diagnostics, all 1 line(s) already shown above ---"),
+              std::string::npos)
+        << shown.output;
+    std::filesystem::remove_all(visible, error);
 }

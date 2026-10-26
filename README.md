@@ -97,9 +97,10 @@ noise: every `file:line:col: error|warning|note:` line anywhere in the stage's *
 only in the first `summary` lines), exact duplicates dropped, at most 20 printed under what the
 summary already showed. A build that buries its diagnostic at line 56 of 3,000 lines of progress
 hands the reader the one line that matters; the compiler's own answer for the example above is one
-line. It knows no language and no compiler — it matches the format the compiler and linter family
-already agrees on, and a stage whose output carries no such line prints exactly what it printed
-before. No flag, no config key, no exit code moved (QUESTIONS.md Q35).
+line. The header always says how many were found and how many the summary had already shown, so a
+short block cannot read as an empty one. It knows no language and no compiler — it matches the format
+the compiler and linter family already agrees on, and a stage whose output carries no such line prints
+exactly what it printed before. No flag, no config key, no exit code moved (QUESTIONS.md Q35).
 
 ## Build and test
 

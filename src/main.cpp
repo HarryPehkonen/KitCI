@@ -108,19 +108,33 @@ void PrintStage(const kitci::StageResult& stage) {
     // friends — wherever it sits in the FULL output, minus whatever the summary just printed. It
     // is the difference between the reader hunting for the answer and being handed it.
     const kitci::Diagnostics diagnostics = kitci::diagnostics_in(stage.output, shown);
-    if (!diagnostics.lines.empty()) {
+    if (!diagnostics.lines.empty() || diagnostics.shown_above > 0) {
         std::string joined;
         for (const std::string& line : diagnostics.lines) {
             joined += line + "\n";
         }
-        const std::size_t shown_count = diagnostics.lines.size();
+        const std::size_t printed = diagnostics.lines.size();
         // The header counts what was FOUND, not what is printed, so a capped block cannot read as
-        // complete — the same honesty as `output, first 40 line(s)`.
-        if (diagnostics.found > shown_count) {
-            std::printf("    --- diagnostics, first %zu of %zu line(s) ---\n", shown_count,
-                        diagnostics.found);
+        // complete — the same honesty as `output, first 40 line(s)`. And what the summary already
+        // printed is named rather than silently dropped: no block at all, and a block with nothing
+        // in it, would otherwise read the same (QUESTIONS.md Q35's ruling).
+        if (diagnostics.lines.empty()) {
+            std::printf("    --- diagnostics, all %zu line(s) already shown above ---\n",
+                        diagnostics.shown_above);
+        } else if (diagnostics.shown_above == 0) {
+            if (diagnostics.found > printed) {
+                std::printf("    --- diagnostics, first %zu of %zu line(s) ---\n", printed,
+                            diagnostics.found);
+            } else {
+                std::printf("    --- diagnostics, %zu line(s) ---\n", printed);
+            }
+        } else if (diagnostics.found > printed) {
+            std::printf(
+                "    --- diagnostics, first %zu of %zu line(s), %zu already shown above ---\n",
+                printed, diagnostics.found, diagnostics.shown_above);
         } else {
-            std::printf("    --- diagnostics, %zu line(s) ---\n", shown_count);
+            std::printf("    --- diagnostics, %zu line(s), %zu already shown above ---\n", printed,
+                        diagnostics.shown_above);
         }
         PrintIndented(joined);
     }

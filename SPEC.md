@@ -131,11 +131,16 @@ and `false`, unquoted, and nowhere else in the vocabulary.
 - Diagnostics of a failed stage (v1.2, QUESTIONS.md Q35 — a spec-owner ruling): after the summary
   block, every line of the stage's **full** combined output matching
   `path:line[:col]: error|warning|note: text` is collected in output order, exact duplicates
-  dropped, any line the summary block already shows dropped, and at most 20 of them printed under
-  `--- diagnostics, N line(s) ---` — or `--- diagnostics, first 20 of N line(s) ---` once the cap
-  bites — where `N` is how many were FOUND, not how many are shown. Nothing is printed when nothing
-  matched, so a failure without diagnostics reads exactly as it did before. It is a reading of the
-  output the run already captured — no flag, no config key, and no change to any exit code.
+  dropped, any line the summary block already shows held back from the block, and at most 20 printed.
+  `N` is how many were FOUND, not how many are shown, and what the summary already printed is COUNTED
+  rather than dropped silently (spec-owner ruling, 2026-10-25), so an absent block and a block with
+  nothing in it cannot read the same. The four forms are `--- diagnostics, N line(s) ---`,
+  `--- diagnostics, first 20 of N line(s) ---` once the cap bites,
+  `--- diagnostics, N line(s), K already shown above ---` when the summary had printed K of them, and
+  `--- diagnostics, all K line(s) already shown above ---` when it had printed every one. No block is
+  printed only when nothing matched at all, so a failure without diagnostics reads exactly as it did
+  before. It is a reading of the output the run already captured — no flag, no config key, and no
+  change to any exit code.
 
 ## 5. Total parser contract — never undefined behaviour
 
@@ -281,8 +286,9 @@ The diagnostics block (v1.2):
 - `DiagnosticsIgnoreProseThatOnlyLooksLikeOne` — gcc's `file: In function '…':` line, a
   `cc1plus: all warnings …` line, a `FAILED: stage — …` line and a bare timestamp are not
   diagnostics.
-- `DiagnosticsSkipLinesTheSummaryAlreadyShows` — a match the summary block already printed is
-  not repeated.
+- `DiagnosticsSkipLinesTheSummaryAlreadyShows` — a match the summary block already printed is not
+  repeated, and is counted: the count of what was shown above is part of the answer, because an
+  absent block must not read as "nothing was found".
 - `DiagnosticsAreCappedAndCounted` — more matches than the cap: the cap is honoured and the count
   says how many were found.
 
@@ -290,7 +296,8 @@ CLI:
 - `ListAnswersWithoutReadingSource` — `--list` output for a fixture config, parsed
   and compared structurally.
 - `RunFailureShowsExtractedDiagnostics` — end to end: a stage whose diagnostic sits past the
-  summary cap reaches stdout, and the verdict line and exit code are unchanged.
+  summary cap reaches stdout with the verdict line and the exit code unchanged, and a diagnostic
+  that sits inside the summary prints the `all … already shown above` header instead of nothing.
 
 ## 9. Stages of work
 

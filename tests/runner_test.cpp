@@ -378,6 +378,15 @@ TEST(RunnerTest, DiagnosticsSkipLinesTheSummaryAlreadyShows) {
     EXPECT_NE(found.lines[0].find("src/late.cpp:2:2: error:"), std::string::npos) << found.lines[0];
     // The count is what the block's header prints, so it must not claim a line nobody will see.
     EXPECT_EQ(found.found, 1U);
+    // What the summary already showed is COUNTED rather than dropped silently: a block that is
+    // absent and a block that printed nothing would otherwise read the same (QUESTIONS.md Q35).
+    EXPECT_EQ(found.shown_above, 1U);
+
+    // Everything already shown above: no lines to print, and the block still says so.
+    const kitci::Diagnostics all_above = kitci::diagnostics_in(output, output);
+    EXPECT_TRUE(all_above.lines.empty());
+    EXPECT_EQ(all_above.found, 0U);
+    EXPECT_EQ(all_above.shown_above, 2U);
 }
 
 TEST(RunnerTest, DiagnosticsAreCappedAndCounted) {

@@ -69,10 +69,13 @@ constexpr int kDiagnosticLineCap = 20;
 // function '…':`, `cc1plus: all warnings …`, a bare `12:00:01:`) is not a diagnostic. Output order
 // is kept, exact duplicates are dropped, and anything `already_shown` has printed is left out, so
 // the block cannot repeat the summary printed above it. `found` counts what survived, because the
-// block's own header has to stay honest when the cap bites.
+// block's own header has to stay honest when the cap bites — and `shown_above` counts what the
+// summary above had already printed, because a block that is ABSENT and a block that printed
+// nothing would otherwise read the same (QUESTIONS.md Q35's ruling).
 struct Diagnostics {
     std::vector<std::string> lines;  // in output order, at most kDiagnosticLineCap of them
     std::size_t found = 0;           // how many survived, before the cap
+    std::size_t shown_above = 0;     // matched, but the summary block already printed them
 };
 
 Diagnostics diagnostics_in(const std::string& output, const std::string& already_shown);

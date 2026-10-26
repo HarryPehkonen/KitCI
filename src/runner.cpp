@@ -488,16 +488,22 @@ Diagnostics diagnostics_in(const std::string& output, const std::string& already
         if (IsAllDigits(match[1].str())) {
             continue;
         }
-        // Either the summary above already printed this line, or an earlier line said exactly the
-        // same thing: the block stays a list of lines the reader has not already been shown.
-        if (already_shown.find(line) != std::string::npos || !seen.insert(line).second) {
+        // An exact duplicate is not a second finding.
+        if (!seen.insert(line).second) {
             continue;
         }
+        // The summary above already printed this one. It is COUNTED rather than dropped silently,
+        // because a block that is absent and a block that printed nothing would read the same
+        // (QUESTIONS.md Q35's ruling).
+        if (already_shown.find(line) != std::string::npos) {
+            ++diagnostics.shown_above;
+            continue;
+        }
+        ++diagnostics.found;
         if (static_cast<int>(diagnostics.lines.size()) < kDiagnosticLineCap) {
             diagnostics.lines.push_back(line);
         }
     }
-    diagnostics.found = seen.size();
     return diagnostics;
 }
 
