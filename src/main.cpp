@@ -104,6 +104,26 @@ void PrintStage(const kitci::StageResult& stage) {
         std::printf("    --- output, first %d line(s) ---\n", stage.summary_lines);
         PrintIndented(shown);
     }
+    // SPEC.md §4's diagnostics block (v1.2): the stage's own payload — `file:line:col: error:` and
+    // friends — wherever it sits in the FULL output, minus whatever the summary just printed. It
+    // is the difference between the reader hunting for the answer and being handed it.
+    const kitci::Diagnostics diagnostics = kitci::diagnostics_in(stage.output, shown);
+    if (!diagnostics.lines.empty()) {
+        std::string joined;
+        for (const std::string& line : diagnostics.lines) {
+            joined += line + "\n";
+        }
+        const std::size_t shown_count = diagnostics.lines.size();
+        // The header counts what was FOUND, not what is printed, so a capped block cannot read as
+        // complete — the same honesty as `output, first 40 line(s)`.
+        if (diagnostics.found > shown_count) {
+            std::printf("    --- diagnostics, first %zu of %zu line(s) ---\n", shown_count,
+                        diagnostics.found);
+        } else {
+            std::printf("    --- diagnostics, %zu line(s) ---\n", shown_count);
+        }
+        PrintIndented(joined);
+    }
 }
 
 }  // namespace

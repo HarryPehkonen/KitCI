@@ -128,6 +128,14 @@ and `false`, unquoted, and nowhere else in the vocabulary.
   matching the fnmatch family.
 - Output of a failed stage: first `summary` lines (default 40) of combined output,
   indented, plus the full command so the human can re-run it.
+- Diagnostics of a failed stage (v1.2, QUESTIONS.md Q35 — a spec-owner ruling): after the summary
+  block, every line of the stage's **full** combined output matching
+  `path:line[:col]: error|warning|note: text` is collected in output order, exact duplicates
+  dropped, any line the summary block already shows dropped, and at most 20 of them printed under
+  `--- diagnostics, N line(s) ---` — or `--- diagnostics, first 20 of N line(s) ---` once the cap
+  bites — where `N` is how many were FOUND, not how many are shown. Nothing is printed when nothing
+  matched, so a failure without diagnostics reads exactly as it did before. It is a reading of the
+  output the run already captured — no flag, no config key, and no change to any exit code.
 
 ## 5. Total parser contract — never undefined behaviour
 
@@ -268,9 +276,21 @@ The canonical AST (v1.1):
 - `AstRejectsOrEscapesNothingNew` — `--ast` on a config that fails to parse exits `2` with the
   parser's own error and no partial JSON.
 
+The diagnostics block (v1.2):
+- `DiagnosticsAreFoundBeyondTheSummaryLines` — a diagnostic past the summary cap is still found.
+- `DiagnosticsIgnoreProseThatOnlyLooksLikeOne` — gcc's `file: In function '…':` line, a
+  `cc1plus: all warnings …` line, a `FAILED: stage — …` line and a bare timestamp are not
+  diagnostics.
+- `DiagnosticsSkipLinesTheSummaryAlreadyShows` — a match the summary block already printed is
+  not repeated.
+- `DiagnosticsAreCappedAndCounted` — more matches than the cap: the cap is honoured and the count
+  says how many were found.
+
 CLI:
 - `ListAnswersWithoutReadingSource` — `--list` output for a fixture config, parsed
   and compared structurally.
+- `RunFailureShowsExtractedDiagnostics` — end to end: a stage whose diagnostic sits past the
+  summary cap reaches stdout, and the verdict line and exit code are unchanged.
 
 ## 9. Stages of work
 

@@ -371,3 +371,29 @@ TEST(CliTest, AstIsOneOutputAtATime) {
         EXPECT_NE(result.output.find("--ast"), std::string::npos) << result.output;
     }
 }
+
+TEST(CliTest, RunFailureShowsExtractedDiagnostics) {
+    // The trap in a real run: 55 lines of progress, the diagnostic at line 56, and the default
+    // `summary = "head:40"` showing only progress. The diagnostic has to reach stdout anyway
+    // (SPEC.md §4, v1.2), with the verdict and the exit code unchanged.
+    const std::string dir = MakeTempDir("kitci-diag-");
+    ASSERT_FALSE(dir.empty());
+    ASSERT_TRUE(WriteFile(dir + "/gate.toml", R"toml([tier.full]
+stages = ["noisy"]
+
+[stage.noisy]
+cmd = "i=0; while [ $i -lt 55 ]; do i=$((i+1)); echo \"[ $i%] Building CXX object src/unit_$i.cpp.o\"; done; echo 'src/pair.cpp:8:18: error: comparison of integers of different signs' >&2; exit 1"
+)toml"));
+
+    const CommandResult result = RunCommandIn(dir, "--gate gate.toml");
+    EXPECT_EQ(result.exit_code, 1) << result.output;
+    EXPECT_NE(result.output.find("GATE FAILED — 0 passed, 1 failed (noisy), 0 skipped"),
+              std::string::npos)
+        << result.output;
+    EXPECT_NE(result.output.find("--- diagnostics, 1 line(s) ---"), std::string::npos)
+        << result.output;
+    EXPECT_NE(result.output.find("src/pair.cpp:8:18: error:"), std::string::npos) << result.output;
+
+    std::error_code error;
+    std::filesystem::remove_all(dir, error);
+}

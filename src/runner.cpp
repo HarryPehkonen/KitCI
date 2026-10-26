@@ -24,6 +24,7 @@
 #include <cstring>
 #include <map>
 #include <regex>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -450,10 +451,54 @@ std::string MergeBase(const std::string& quoted_dir, const std::string& referenc
         "git -C " + quoted_dir + " merge-base HEAD " + reference + " 2>/dev/null", status));
 }
 
+// SPEC.md §4's diagnostics block. The shape is the compiler and linter family's own convention:
+//     src/paths.cpp:280:28: error: code should be clang-formatted [-Wclang-format-violations]
+//     module.py:12: error: …                       (no column: mypy, rustc)
+// Path, then line, an optional column, then one of three lowercase severities. The match must
+// begin at column 1 — an indented match is a nested tool's output being quoted by something else —
+// and a "path" that is nothing but digits is a clock, not a file (`12:00:01: error: …`).
+const std::regex& DiagnosticPattern() {
+    static const std::regex pattern(R"(^([^ \t][^:]*):([0-9]+)(:[0-9]+)?: (error|warning|note): )");
+    return pattern;
+}
+
+bool IsAllDigits(const std::string& text) {
+    return !text.empty() && text.find_first_not_of("0123456789") == std::string::npos;
+}
+
 }  // namespace
 
 bool glob_matches(const std::string& pattern, const std::string& path) {
     return MatchPattern(pattern.c_str(), path.c_str());
+}
+
+Diagnostics diagnostics_in(const std::string& output, const std::string& already_shown) {
+    Diagnostics diagnostics;
+    std::set<std::string> seen;
+    std::size_t pos = 0;
+    while (pos < output.size()) {
+        const std::size_t newline = output.find('\n', pos);
+        const std::string line =
+            newline == std::string::npos ? output.substr(pos) : output.substr(pos, newline - pos);
+        pos = newline == std::string::npos ? output.size() : newline + 1;
+        std::smatch match;
+        if (!std::regex_search(line, match, DiagnosticPattern())) {
+            continue;
+        }
+        if (IsAllDigits(match[1].str())) {
+            continue;
+        }
+        // Either the summary above already printed this line, or an earlier line said exactly the
+        // same thing: the block stays a list of lines the reader has not already been shown.
+        if (already_shown.find(line) != std::string::npos || !seen.insert(line).second) {
+            continue;
+        }
+        if (static_cast<int>(diagnostics.lines.size()) < kDiagnosticLineCap) {
+            diagnostics.lines.push_back(line);
+        }
+    }
+    diagnostics.found = seen.size();
+    return diagnostics;
 }
 
 std::string head_lines(const std::string& text, int lines) {

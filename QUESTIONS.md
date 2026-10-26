@@ -6,9 +6,10 @@ while building KitCI, each with the question it answers: **Q1–Q8** in stage A 
 the gate), **Q9–Q16** in stage B (the runner), **Q17–Q23** in stage C (the graphs and the
 README positioning), **Q24–Q29** in stage D (the docsum conversion and the fleet notes),
 **Q31–Q33** in v1.1 (the canonical AST, the graph annotations, and the grammar appendix), and
-**Q34** in the docs card of 2026-10-07 (what `docs/FOR-AGENTS.md` may claim, and how).
-**Q30 is not a reading** — it is a spec-owner ruling, and it is the one entry that changes the
-frozen vocabulary.
+**Q34** in the docs card of 2026-10-07 (what `docs/FOR-AGENTS.md` may claim, and how), and
+**Q35** in the agent-facing review of 2026-10-25 (the diagnostics block).
+**Q30 and Q35 are not readings** — they are spec-owner rulings. Q30 is the one that changed the
+frozen vocabulary; Q35 adds no vocabulary at all, and says so.
 
 ## Q1 — Is the stage set exactly the five in §6, or the kit's gate plus those five?
 
@@ -515,3 +516,72 @@ how this repo's other docs were written too.
 "measured", or should it read as a single case study until a second task — a different edge, or a
 config with no comments — has been run? The card asked for the evidence to be cited without
 softening; the limits paragraph is what "without softening" turned out to mean.
+
+## Q35 — Should a failed stage's output carry extracted diagnostics? (SPEC-OWNER RULING, 2026-10-25)
+
+The spec owner brought a proposal written for agents that drive repos through gates: an engine-side
+JSON report, per-stage `fix_command` / `agent_hint` / `parser` keys, a `depends_on` graph with
+`blocked_gates`, an autofix, and a stdio MCP server. Reviewed against the code, most of it falls: this
+engine has no dependency graph (no `depends_on` in the repo at all, and §4's "every stage runs" is the
+property `blocked_gates` would trade away), a verifier that repairs its own working tree is not a
+verifier, `parser = "gcc"` is one vocabulary value per tool family against §3's freeze, and the MCP
+server's premise — that an agent cannot work out the flags — is the premise `docs/FOR-AGENTS.md`
+already measured false. One item survived, narrower than it was proposed, and this entry is it.
+
+**Measured, 2026-10-25, on this machine.** A stage whose `cmd` prints 55 lines of
+`[ N%] Building CXX object …` and then dies on a real `-Werror` compile gives its reader nothing: the
+run prints `--- output, first 40 line(s) ---` and all 40 lines are progress, because the compiler's
+answer is line 56 of the stage's output. The whole run, before: 54 lines, 2541 bytes, no `error:` in
+it anywhere. The compiler's own answer is one line.
+
+**Then the fleet corrected the review, which is worth recording.** The same exercise on a converted
+repo — a scratch copy of jsonTools, `format` stage broken on purpose — already reads well:
+
+    FAILED: format — clang-format drift in the files listed above (fix: clang-format -i <those files>)
+    --- .ci-logs/format.log (last 25 lines) ---
+          src/paths.cpp:280:28: error: code should be clang-formatted [-Wclang-format-violations]
+
+because `ci_fail` + `show_log` tail the stage's log, and 12 of 12 converted repos carry that helper
+(`UnicodeChecker/scripts/gate-env.sh:195-207`). A JSON report would therefore mostly restate prose the
+policy layer already writes, and the round trip the proposal claimed is already paid for. What
+survives was measured too: `tail -25` is a POSITION heuristic. Compilers print the payload last, so it
+works; a multi-finding run does not — `cmake --build --target tidy` emits one finding per translation
+unit and tidy.log's last 25 lines carry only the last few. Extraction by FORMAT is what fixes that,
+and it needs no stage to change.
+
+**Ruling, implemented:** over a failed stage's full combined output, every line matching
+`path:line[:col]: error|warning|note: text` is collected in output order, exact duplicates dropped,
+lines the summary block already shows dropped, capped at 20, and printed under the summary:
+
+    --- diagnostics, 1 line(s) ---
+      pair.cpp:8:18: error: comparison of integer expressions of different signedness: … [-Werror=sign-compare]
+
+The same run, after: 2764 bytes. No new flag (§2 stays frozen), no new `gate.toml` key (§3 stays
+frozen), no exit code moves, and a failure with no diagnostics prints exactly what it printed before.
+The count in the header is what was FOUND, not what is shown, so a capped block cannot read as
+complete. Verified absent when it should be: on the converted repo the clang-format findings the
+script had already tailed into view are correctly NOT repeated.
+
+**Compiler-agnostic by the tools' convention, not by a keyword.** Measured here: gcc 14.2.0,
+clang 19.1.7, `clang-format --dry-run --Werror` and `clang-tidy` all emit that shape.
+Language-agnostic in the same sense and no more: rustc, tsc, ruff, mypy and go vet use it, but pytest
+and ctest do not (`FAILED test_bad.py::test_bad - assert 1 == 2`, `2 - t_bad (Failed)`) — they already
+print one compact line per failure, so the extractor finds nothing there and needs nothing. It reads a
+FORMAT the tools agree on; it knows no language. That is why it is not the proposal's `parser = "gcc"`
+key: one matcher, no per-family vocabulary, nothing to maintain per tool.
+
+Test first, watched red for the right reason — four tests in `tests/runner_test.cpp`, one in
+`tests/cli_test.cpp` (SPEC.md §8, v1.2). The red was the gap itself, with the trap assertions already
+passing (the summary really was 40 lines of progress with no `error:` in it):
+
+    [ RUN      ] RunnerTest.DiagnosticsAreFoundBeyondTheSummaryLines
+    Expected equality of these values:
+      found.lines.size()   Which is: 0
+      1U                   Which is: 1
+    0 found
+
+**One edge ruled on rather than left implicit:** a "path" that is nothing but digits is a clock, not a
+file — `12:00:01: error: …` is not a diagnostic.
+**Question:** is a fixed cap of 20 right (it is a constant in the runner, not a key), and is dropping
+the lines the summary already printed the behaviour you want — or would you rather have the complete
+diagnostic list, duplicates and all?
