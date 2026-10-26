@@ -7,9 +7,11 @@ the gate), **Q9–Q16** in stage B (the runner), **Q17–Q23** in stage C (the g
 README positioning), **Q24–Q29** in stage D (the docsum conversion and the fleet notes),
 **Q31–Q33** in v1.1 (the canonical AST, the graph annotations, and the grammar appendix), and
 **Q34** in the docs card of 2026-10-07 (what `docs/FOR-AGENTS.md` may claim, and how), and
-**Q35** in the agent-facing review of 2026-10-25 (the diagnostics block).
-**Q30 and Q35 are not readings** — they are spec-owner rulings. Q30 is the one that changed the
-frozen vocabulary; Q35 adds no vocabulary at all, and says so.
+**Q35** in the agent-facing review of 2026-10-25 (the diagnostics block), and
+**Q36** in that review's audit (whether the engine should run its own gate).
+**Q30, Q35 and Q36 are not readings** — they are spec-owner rulings. Q30 is the one that changed the
+frozen vocabulary; Q35 adds no vocabulary at all, and says so; Q36 changes no code at all — it keeps
+KitCI's own gate in `tools/ci.sh`, next to the scripts every converted repository already carries.
 
 ## Q1 — Is the stage set exactly the five in §6, or the kit's gate plus those five?
 
@@ -625,3 +627,27 @@ one composed label: the same five strings, one `printf`.
 
 **Question:** none outstanding — the shape is settled, and the one knob left (the cap, a constant in
 the runner) needs no ruling to keep as it is.
+
+## Q36 — Should the engine run its own `gate.toml`? (2026-10-25)
+
+No. KitCI's own gate stays `tools/ci.sh` — 516 lines, six stages (tree format build lint tests fuzz) —
+and the twelve converted repositories keep carrying the `gate.toml` files the engine reads.
+
+The question was raised by an audit of v1.2, which noticed that the engine is the one thing in the
+fleet not gated by itself. It went to the spec owner rather than being taken, because converting the
+script is not free and not obvious: the `build` stage builds the binary, so the engine cannot run the
+stage that produces it. Whatever happened, the gate would open with a shell prologue, and a gate that
+is half script and half config is harder to read than either — the dogfooding would be paid for with
+the legibility it was supposed to buy.
+
+**He ruled: *"I think we'll keep KitCI out of KitCI's CI workflow. Let's just rely on the scripts."***
+
+What it keeps: a green engine does not depend on the engine it is testing, so a broken build cannot
+take the gate down with it; all six stages stay readable top to bottom in one file; and the
+AI-DEV-STARTER contract the hooks expect (one final GATE PASSED line, NO_COLOR, staged runs,
+`--require-clean`) is met by the script that already met it. What it costs: the engine gets no
+dogfooding from its own gate, so a gap a converted repository would hit first is found there instead.
+That cost is accepted, and this entry exists so the question is not re-opened by the next person to
+notice it.
+
+**Question:** none — closed.
