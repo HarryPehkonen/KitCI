@@ -128,19 +128,6 @@ and `false`, unquoted, and nowhere else in the vocabulary.
   matching the fnmatch family.
 - Output of a failed stage: first `summary` lines (default 40) of combined output,
   indented, plus the full command so the human can re-run it.
-- Diagnostics of a failed stage (v1.2, QUESTIONS.md Q35 — a spec-owner ruling): after the summary
-  block, every line of the stage's **full** combined output matching
-  `path:line[:col]: error|warning|note: text` is collected in output order, exact duplicates
-  dropped, any line the summary block already shows held back from the block, and at most 20 printed.
-  `N` is how many were FOUND, not how many are shown, and what the summary already printed is COUNTED
-  rather than dropped silently (spec-owner ruling, 2026-10-25), so an absent block and a block with
-  nothing in it cannot read the same. The four forms are `--- diagnostics, N line(s) ---`,
-  `--- diagnostics, first 20 of N line(s) ---` once the cap bites,
-  `--- diagnostics, N line(s), K already shown above ---` when the summary had printed K of them, and
-  `--- diagnostics, all K line(s) already shown above ---` when it had printed every one. No block is
-  printed only when nothing matched at all, so a failure without diagnostics reads exactly as it did
-  before. It is a reading of the output the run already captured — no flag, no config key, and no
-  change to any exit code.
 
 ## 5. Total parser contract — never undefined behaviour
 
@@ -281,23 +268,9 @@ The canonical AST (v1.1):
 - `AstRejectsOrEscapesNothingNew` — `--ast` on a config that fails to parse exits `2` with the
   parser's own error and no partial JSON.
 
-The diagnostics block (v1.2):
-- `DiagnosticsAreFoundBeyondTheSummaryLines` — a diagnostic past the summary cap is still found.
-- `DiagnosticsIgnoreProseThatOnlyLooksLikeOne` — gcc's `file: In function '…':` line, a
-  `cc1plus: all warnings …` line, a `FAILED: stage — …` line and a bare timestamp are not
-  diagnostics.
-- `DiagnosticsSkipLinesTheSummaryAlreadyShows` — a match the summary block already printed is not
-  repeated, and is counted: the count of what was shown above is part of the answer, because an
-  absent block must not read as "nothing was found".
-- `DiagnosticsAreCappedAndCounted` — more matches than the cap: the cap is honoured and the count
-  says how many were found.
-
 CLI:
 - `ListAnswersWithoutReadingSource` — `--list` output for a fixture config, parsed
   and compared structurally.
-- `RunFailureShowsExtractedDiagnostics` — end to end: a stage whose diagnostic sits past the
-  summary cap reaches stdout with the verdict line and the exit code unchanged, and a diagnostic
-  that sits inside the summary prints the `all … already shown above` header instead of nothing.
 
 ## 9. Stages of work
 

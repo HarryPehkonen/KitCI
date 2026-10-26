@@ -5,7 +5,6 @@
 #ifndef KITCI_RUNNER_HPP
 #define KITCI_RUNNER_HPP
 
-#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -57,28 +56,6 @@ bool glob_matches(const std::string& pattern, const std::string& path);
 
 // SPEC.md §4's `summary = "head:<n>"`: the first n lines of a failed stage's output.
 std::string head_lines(const std::string& text, int lines);
-
-// SPEC.md §4's diagnostics block (v1.2): at most this many extracted lines are ever printed. It is
-// a constant of the contract rather than a config key — the vocabulary stays frozen (§3).
-constexpr int kDiagnosticLineCap = 20;
-
-// SPEC.md §4's diagnostics block: the tool-shaped payload of a failed stage, pulled out of the FULL
-// output wherever it sits. A line counts when it reads `path:line[:col]: error|warning|note: text`
-// — the format the compiler and linter family already agrees on (gcc, clang, clang-format,
-// clang-tidy, and, outside C++, rustc, ruff, mypy). Prose that only resembles it (`file: In
-// function '…':`, `cc1plus: all warnings …`, a bare `12:00:01:`) is not a diagnostic. Output order
-// is kept, exact duplicates are dropped, and anything `already_shown` has printed is left out, so
-// the block cannot repeat the summary printed above it. `found` counts what survived, because the
-// block's own header has to stay honest when the cap bites — and `shown_above` counts what the
-// summary above had already printed, because a block that is ABSENT and a block that printed
-// nothing would otherwise read the same (QUESTIONS.md Q35's ruling).
-struct Diagnostics {
-    std::vector<std::string> lines;  // in output order, at most kDiagnosticLineCap of them
-    std::size_t found = 0;           // how many survived, before the cap
-    std::size_t shown_above = 0;     // matched, but the summary block already printed them
-};
-
-Diagnostics diagnostics_in(const std::string& output, const std::string& already_shown);
 
 // The files changed against the merge base with main (SPEC.md §2, §4). known == false when
 // git cannot answer, with `note` saying why; the caller decides what that means.

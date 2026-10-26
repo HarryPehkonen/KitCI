@@ -104,36 +104,6 @@ void PrintStage(const kitci::StageResult& stage) {
         std::printf("    --- output, first %d line(s) ---\n", stage.summary_lines);
         PrintIndented(shown);
     }
-    // SPEC.md §4's diagnostics block (v1.2): the stage's own payload — `file:line:col: error:` and
-    // friends — wherever it sits in the FULL output, minus whatever the summary just printed. It
-    // is the difference between the reader hunting for the answer and being handed it.
-    const kitci::Diagnostics diagnostics = kitci::diagnostics_in(stage.output, shown);
-    if (!diagnostics.lines.empty() || diagnostics.shown_above > 0) {
-        std::string joined;
-        for (const std::string& line : diagnostics.lines) {
-            joined += line + "\n";
-        }
-        const std::size_t printed = diagnostics.lines.size();
-        // The header counts what was FOUND, not what is printed, so a capped block cannot read as
-        // complete — the same honesty as `output, first 40 line(s)`. And what the summary already
-        // printed is named rather than silently dropped: no block at all, and a block with nothing
-        // in it, would otherwise read the same (QUESTIONS.md Q35's ruling). Two axes, one label,
-        // one printf.
-        std::string label;
-        if (diagnostics.lines.empty()) {
-            label =
-                "all " + std::to_string(diagnostics.shown_above) + " line(s) already shown above";
-        } else {
-            label = diagnostics.found > printed ? "first " + std::to_string(printed) + " of " +
-                                                      std::to_string(diagnostics.found) + " line(s)"
-                                                : std::to_string(printed) + " line(s)";
-            if (diagnostics.shown_above > 0) {
-                label += ", " + std::to_string(diagnostics.shown_above) + " already shown above";
-            }
-        }
-        std::printf("    --- diagnostics, %s ---\n", label.c_str());
-        PrintIndented(joined);
-    }
 }
 
 }  // namespace

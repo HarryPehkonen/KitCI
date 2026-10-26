@@ -25,18 +25,6 @@ kitci::Tier TierNamed(const kitci::Config& config, const std::string& name) {
     return it == config.tiers.end() ? kitci::Tier{} : it->second;
 }
 
-// The trap SPEC.md §4's diagnostics block exists for, in one command: 55 lines of build-tool
-// progress, then the diagnostic — line 56 of the stage's output, past the default
-// `summary = "head:40"`. The compiler's own answer is one line.
-std::string NoisyStageConfig() {
-    return R"toml([tier.full]
-stages = ["noisy"]
-
-[stage.noisy]
-cmd = "i=0; while [ $i -lt 55 ]; do i=$((i+1)); echo \"[ $i%] Building CXX object src/unit_$i.cpp.o\"; done; echo 'src/pair.cpp:8:18: error: comparison of integers of different signs' >&2; exit 1"
-)toml";
-}
-
 }  // namespace
 
 TEST(RunnerTest, RunsStageAndPassesOnZeroExit) {
@@ -331,78 +319,4 @@ summary = "head:2"
     EXPECT_EQ(result.stages[0].summary_lines, 2);
     EXPECT_EQ(kitci::head_lines(result.stages[0].output, result.stages[0].summary_lines),
               "one\ntwo\n");
-}
-
-TEST(RunnerTest, DiagnosticsAreFoundBeyondTheSummaryLines) {
-    const kitci::Config config = ConfigFrom(NoisyStageConfig());
-    const kitci::RunResult result = kitci::run_tier(config, TierNamed(config, "full"), {});
-    ASSERT_EQ(result.stages.size(), 1U);
-    const kitci::StageResult& stage = result.stages[0];
-    ASSERT_EQ(stage.status, kitci::StageStatus::kFailed);
-
-    // The trap first, so the test cannot pass by luck: the summary is 40 lines of progress and
-    // the diagnostic is line 56 of the stage's output.
-    const std::string shown = kitci::head_lines(stage.output, stage.summary_lines);
-    EXPECT_EQ(stage.summary_lines, 40);
-    EXPECT_EQ(shown.find("error:"), std::string::npos) << shown;
-
-    // Then the answer: the payload is found wherever it sits, not only in the first `summary`
-    // lines (SPEC.md §4, v1.2).
-    const kitci::Diagnostics found = kitci::diagnostics_in(stage.output, shown);
-    ASSERT_EQ(found.lines.size(), 1U) << found.found << " found";
-    EXPECT_NE(found.lines[0].find("src/pair.cpp:8:18: error:"), std::string::npos)
-        << found.lines[0];
-}
-
-TEST(RunnerTest, DiagnosticsIgnoreProseThatOnlyLooksLikeOne) {
-    // Every line here has been seen in a real run of this fleet's gates.
-    const std::string output =
-        "pair.cpp: In function 'int checksum(const std::vector<int>&)':\n"
-        "cc1plus: all warnings being treated as errors\n"
-        "FAILED: build — cmake configure failed\n"
-        "12:00:01: error: a clock, not a file\n"
-        "==> build (-Werror, zero warnings)\n"
-        "src/ok.cpp:3:1: error: comparison of integers of different signs\n";
-    const kitci::Diagnostics found = kitci::diagnostics_in(output, "");
-    ASSERT_EQ(found.lines.size(), 1U) << found.found << " found";
-    EXPECT_NE(found.lines[0].find("src/ok.cpp:3:1: error:"), std::string::npos) << found.lines[0];
-}
-
-TEST(RunnerTest, DiagnosticsSkipLinesTheSummaryAlreadyShows) {
-    const std::string output =
-        "src/early.cpp:1:1: error: the summary already printed this one\n"
-        "src/late.cpp:2:2: error: this one is past the summary\n";
-    const std::string shown = "src/early.cpp:1:1: error: the summary already printed this one\n";
-    const kitci::Diagnostics found = kitci::diagnostics_in(output, shown);
-    ASSERT_EQ(found.lines.size(), 1U);
-    EXPECT_NE(found.lines[0].find("src/late.cpp:2:2: error:"), std::string::npos) << found.lines[0];
-    // The count is what the block's header prints, so it must not claim a line nobody will see.
-    EXPECT_EQ(found.found, 1U);
-    // What the summary already showed is COUNTED rather than dropped silently: a block that is
-    // absent and a block that printed nothing would otherwise read the same (QUESTIONS.md Q35).
-    EXPECT_EQ(found.shown_above, 1U);
-
-    // Everything already shown above: no lines to print, and the block still says so.
-    const kitci::Diagnostics all_above = kitci::diagnostics_in(output, output);
-    EXPECT_TRUE(all_above.lines.empty());
-    EXPECT_EQ(all_above.found, 0U);
-    EXPECT_EQ(all_above.shown_above, 2U);
-}
-
-TEST(RunnerTest, DiagnosticsAreCappedAndCounted) {
-    const int cap = kitci::kDiagnosticLineCap;
-    std::string output;
-    for (int i = 1; i <= cap + 3; ++i) {
-        output += "src/many.cpp:" + std::to_string(i) + ":1: warning: finding " +
-                  std::to_string(i) + "\n";
-    }
-    // An exact duplicate is not a second finding: the header counts findings, not lines read.
-    output += "src/many.cpp:1:1: warning: finding 1\n";
-
-    const kitci::Diagnostics found = kitci::diagnostics_in(output, "");
-    EXPECT_EQ(static_cast<int>(found.lines.size()), cap);
-    EXPECT_EQ(found.found, static_cast<std::size_t>(cap + 3));
-    EXPECT_NE(found.lines.front().find("finding 1"), std::string::npos) << found.lines.front();
-    EXPECT_NE(found.lines.back().find("finding " + std::to_string(cap)), std::string::npos)
-        << found.lines.back();
 }

@@ -92,16 +92,6 @@ materialised, declaration order, no line numbers), the graph nodes annotate only
 stage deviates from, and `SPEC.md` gains an EBNF appendix for `gate.toml`'s total syntax. The
 vocabulary is untouched: every one of these is a projection of the same parse the run uses.
 
-**v1.2 — the failure explains itself.** A failed stage now ends with its payload pulled out of the
-noise: every `file:line:col: error|warning|note:` line anywhere in the stage's **full** output (not
-only in the first `summary` lines), exact duplicates dropped, at most 20 printed under what the
-summary already showed. A build that buries its diagnostic at line 56 of 3,000 lines of progress
-hands the reader the one line that matters; the compiler's own answer for the example above is one
-line. The header always says how many were found and how many the summary had already shown, so a
-short block cannot read as an empty one. It knows no language and no compiler — it matches the format
-the compiler and linter family already agrees on, and a stage whose output carries no such line prints
-exactly what it printed before. No flag, no config key, no exit code moved (QUESTIONS.md Q35).
-
 ## Build and test
 
 ```bash
